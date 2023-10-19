@@ -42,7 +42,7 @@ private:
         }
     }
 
-    void paramsHandler (char *param) const noexcept
+    static void paramsHandler (char *param) noexcept
     {
         if (strcmp(param, "-v") == 0 || strcmp(param, "--version") == 0)
             versionHandler();
@@ -50,13 +50,13 @@ private:
             helpHandler();
     }
 
-    void versionHandler () const noexcept
+    static void versionHandler () noexcept
     {
         std::cout << PROJECT_NAME << " v=" << PROJECT_VER << std::endl;
         exit(EXIT_SUCCESS);
     }
 
-    void helpHandler () const noexcept
+    static void helpHandler () noexcept
     {
         std::cout << "Usage: \n       "
                   << "./kv-store [/path/to/kv-store.conf]\n       "

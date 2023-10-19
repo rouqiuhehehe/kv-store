@@ -4,75 +4,11 @@
 
 #ifndef LINUX_SERVER_LIB_KV_STORE_COMMAND_STRUCTS_KV_STRING_COMMAND_H_
 #define LINUX_SERVER_LIB_KV_STORE_COMMAND_STRUCTS_KV_STRING_COMMAND_H_
-#include "kv-command-common.h"
 
 class StringCommandHandler : public CommandCommon
 {
+    friend class BaseCommandHandler;
 public:
-    enum Commands
-    {
-        NIL = -1,
-        SET,
-        GET,
-        INCR,
-        INCRBY,
-        INCRBYFLOAT,
-        DECR,
-        DECRBY,
-        APPEND,
-        MSET,
-        END
-    };
-    FIND_COMMAND
-
-    inline ResValueType handlerCommand (
-        const CommandParams &commandParams,
-        Commands cmd
-    )
-    {
-        ResValueType resValue;
-        // 检查是否有key
-        bool success = checkKeyIsValid(commandParams, resValue);
-        if (!success)
-            return resValue;
-
-        switch (cmd)
-        {
-            case Commands::SET:
-                handlerSet(commandParams, resValue);
-                break;
-            case Commands::GET:
-                handlerGet(commandParams, resValue);
-                break;
-            case Commands::INCR:
-                handlerIncr(commandParams, resValue);
-                break;
-            case Commands::INCRBY:
-                handlerIncrBy(commandParams, resValue);
-                break;
-            case Commands::DECR:
-                handlerDecr(commandParams, resValue);
-                break;
-            case Commands::DECRBY:
-                handlerDecrBy(commandParams, resValue);
-                break;
-            case Commands::APPEND:
-                handlerAppend(commandParams, resValue);
-                break;
-            case Commands::MSET:
-                handlerMSet(commandParams, resValue);
-                break;
-            case INCRBYFLOAT:
-                handlerIncrByFloat(commandParams, resValue);
-                break;
-            case Commands::NIL:
-            case Commands::END:
-                break;
-        }
-
-        return resValue;
-    }
-
     inline void clear () noexcept override
     {
         keyValues.clear();
@@ -82,182 +18,140 @@ public:
         return keyValues.erase(key);
     }
 private:
-    void handlerSet (
-        const CommandParams &commandParams,
-        ResValueType &resValue
-    )
+    void handlerSet (ParamsType &params)
     {
-        // 检查参数长度 是否缺少参数
-        bool success = checkHasParams(commandParams, resValue, -1);
-        if (!success)
-            return;
-
-        // 检查拓展参数 NX|XX EX|PX GET
-        success = handlerExtraParams(commandParams, resValue);
-        if (!success)
-            return;
-
-        // 填充value
-        value.value = commandParams.params[0];
-        resValue.setOKFlag();
-        auto it = keyValues.find(commandParams.key);
-        if (it == keyValues.end())
-        {
-            if (value.setModel == StringValueType::SetModel::NX)
-            {
-                resValue.setNilFlag();
-                return;
-            }
-            if (value.isReturnOldValue)
-                resValue.setNilFlag();
-
-            setNewKeyValue(commandParams.key);
-            return;
-        }
-
-        if (value.setModel == StringValueType::SetModel::XX)
-        {
-            resValue.setNilFlag();
-            return;
-        }
-        if (value.isReturnOldValue)
-            resValue.setStringValue(it->second);
-
-        if (eventAddObserverParams.expire != std::chrono::milliseconds(0))
-            EVENT_OBSERVER_EMIT(EventType::RESET_EXPIRE);
-
-        it->second = value.value;
+        handlerSet(params.commandParams, params.resValue);
     }
 
-    void handlerGet (const CommandParams &commandParams, ResValueType &resValue)
+    void handlerGet (ParamsType &params)
     {
-        bool success = checkHasParams(commandParams, resValue, 0);
+        bool success = checkHasParams(params.commandParams, params.resValue, 0);
         if (!success)
             return;
 
-        auto it = keyValues.find(commandParams.key);
+        auto it = keyValues.find(params.commandParams.key);
         if (it == keyValues.end())
-            resValue.setNilFlag();
+            params.resValue.setNilFlag();
         else
-            resValue.setStringValue(it->second);
+            params.resValue.setStringValue(it->second);
     }
 
-    void handlerIncr (const CommandParams &commandParams, ResValueType &resValue)
+    void handlerIncr (ParamsType &params)
     {
-        bool success = checkHasParams(commandParams, resValue, 0);
+        bool success = checkHasParams(params.commandParams, params.resValue, 0);
         if (!success)
             return;
 
-        handlerIncrCommon(commandParams, resValue, 1);
+        handlerIncrCommon(params.commandParams, params.resValue, 1);
     }
 
-    void handlerIncrBy (const CommandParams &commandParams, ResValueType &resValue)
+    void handlerIncrBy (ParamsType &params)
     {
-        bool success = checkHasParams(commandParams, resValue, 1);
+        bool success = checkHasParams(params.commandParams, params.resValue, 1);
         if (!success)
             return;
 
         IntegerType integer;
-        if (!checkValueIsLongLong(commandParams, resValue, &integer))
+        if (!checkValueIsLongLong(params.commandParams, params.resValue, &integer))
             return;
 
-        handlerIncrCommon(commandParams, resValue, integer);
+        handlerIncrCommon(params.commandParams, params.resValue, integer);
     }
 
-    void handlerDecr (const CommandParams &commandParams, ResValueType &resValue)
+    void handlerDecr (ParamsType &params)
     {
-        bool success = checkHasParams(commandParams, resValue, 0);
+        bool success = checkHasParams(params.commandParams, params.resValue, 0);
         if (!success)
             return;
 
-        handlerIncrCommon(commandParams, resValue, -1);
+        handlerIncrCommon(params.commandParams, params.resValue, -1);
     }
 
-    void handlerDecrBy (const CommandParams &commandParams, ResValueType &resValue)
+    void handlerDecrBy (ParamsType &params)
     {
-        bool success = checkHasParams(commandParams, resValue, 1);
+        bool success = checkHasParams(params.commandParams, params.resValue, 1);
         if (!success)
             return;
 
         IntegerType integer;
-        if (!checkValueIsLongLong(commandParams, resValue, &integer))
+        if (!checkValueIsLongLong(params.commandParams, params.resValue, &integer))
             return;
 
-        handlerIncrCommon(commandParams, resValue, -integer);
+        handlerIncrCommon(params.commandParams, params.resValue, -integer);
     }
-    void handlerAppend (const CommandParams &commandParams, ResValueType &resValue)
+    void handlerAppend (ParamsType &params)
     {
-        if (!checkKeyIsValid(commandParams, resValue))
+        if (!checkKeyIsValid(params.commandParams, params.resValue))
             return;
-        if (!checkHasParams(commandParams, resValue, 1))
+        if (!checkHasParams(params.commandParams, params.resValue, 1))
             return;
 
-        auto it = keyValues.find(commandParams.key);
+        auto it = keyValues.find(params.commandParams.key);
         if (it == keyValues.end())
         {
-            value.value = commandParams.params[0];
-            setNewKeyValue(commandParams.key);
+            value.value = params.commandParams.params[0];
+            setNewKeyValue(params.commandParams.key);
 
-            resValue.setIntegerValue(value.value.size());
+            params.resValue.setIntegerValue(static_cast<IntegerType>(value.value.size()));
         }
         else
         {
-            it->second += commandParams.params[0];
-            resValue.setIntegerValue(it->second.size());
+            it->second += params.commandParams.params[0];
+            params.resValue.setIntegerValue(static_cast<IntegerType>(it->second.size()));
         }
     }
-    void handlerMSet (const CommandParams &commandParams, ResValueType &resValue)
+    void handlerMSet (ParamsType &params)
     {
         // 因为第一个key被截出来了，所以commandParams.params.size()必须是奇数才是正确的
-        if ((commandParams.params.size() & 1) == 0)
+        if ((params.commandParams.params.size() & 1) == 0)
         {
-            resValue.setErrorStr(commandParams, ResValueType::ErrorType::WRONG_NUMBER);
+            params.resValue.setErrorStr(params.commandParams, ResValueType::ErrorType::WRONG_NUMBER);
             return;
         }
         CommandParams loopParams;
-        loopParams.command = commands[ENUM_TO_INT(Commands::SET)];
-        loopParams.key = commandParams.key;
+        loopParams.command = "set";
+        loopParams.key = params.commandParams.key;
         size_t i = 0;
         // 设置value
-        loopParams.params.emplace_back(commandParams.params[i++]);
+        loopParams.params.emplace_back(params.commandParams.params[i++]);
         for (;;)
         {
-            handlerSet(loopParams, resValue);
+            handlerSet(loopParams, params.resValue);
 
-            if (i == commandParams.params.size())
+            if (i == params.commandParams.params.size())
                 break;
             // 设置key
-            loopParams.key = commandParams.params[i++];
-            loopParams.params[0] = commandParams.params[i++];
+            loopParams.key = params.commandParams.params[i++];
+            loopParams.params[0] = params.commandParams.params[i++];
         }
     }
 
-    void handlerIncrByFloat (const CommandParams &commandParams, ResValueType &resValue)
+    void handlerIncrByFloat (ParamsType &params)
     {
-        bool success = checkHasParams(commandParams, resValue, 1);
+        bool success = checkHasParams(params.commandParams, params.resValue, 1);
         if (!success)
             return;
 
         FloatType doubleValue;
-        if (!Utils::StringHelper::stringIsDouble(commandParams.params[0], &doubleValue))
+        if (!Utils::StringHelper::stringIsDouble(params.commandParams.params[0], &doubleValue))
         {
-            resValue.setErrorStr(commandParams, ResValueType::ErrorType::VALUE_NOT_FLOAT);
+            params.resValue.setErrorStr(params.commandParams, ResValueType::ErrorType::VALUE_NOT_FLOAT);
             return;
         }
 
-        auto it = keyValues.find(commandParams.key);
+        auto it = keyValues.find(params.commandParams.key);
         if (it == keyValues.end())
         {
             value.value = Utils::StringHelper::toString(doubleValue);
-            setNewKeyValue(commandParams.key);
+            setNewKeyValue(params.commandParams.key);
 
-            resValue.setStringValue(value.value);
+            params.resValue.setStringValue(value.value);
         }
         else
         {
             FloatType oldValue;
             if (!Utils::StringHelper::stringIsDouble(it->second, &oldValue))
-                resValue.setErrorStr(commandParams, ResValueType::ErrorType::VALUE_NOT_FLOAT);
+                params.resValue.setErrorStr(params.commandParams, ResValueType::ErrorType::VALUE_NOT_FLOAT);
             else
             {
                 if (Utils::MathHelper::doubleCalculateWhetherOverflow <std::plus <FloatType>>(
@@ -265,20 +159,61 @@ private:
                     doubleValue
                 ))
                 {
-                    resValue.setErrorStr(
-                        commandParams,
+                    params.resValue.setErrorStr(
+                        params.commandParams,
                         ResValueType::ErrorType::INCR_OR_DECR_OVERFLOW
                     );
                     return;
                 }
 
-                it->second = std::move(Utils::StringHelper::toString(oldValue + doubleValue));
-                resValue.setStringValue(it->second);
+                it->second = Utils::StringHelper::toString(oldValue + doubleValue);
+                params.resValue.setStringValue(it->second);
             }
         }
     }
 
 private:
+     void handlerSet (const CommandParams &commandParams, ResValueType &resValue) {
+         // 检查参数长度 是否缺少参数
+         bool success = checkHasParams(commandParams, resValue, -1);
+         if (!success)
+             return;
+
+         // 检查拓展参数 NX|XX EX|PX GET
+         success = handlerExtraParams(commandParams, resValue);
+         if (!success)
+             return;
+
+         // 填充value
+         value.value = commandParams.params[0];
+         resValue.setOKFlag();
+         auto it = keyValues.find(commandParams.key);
+         if (it == keyValues.end())
+         {
+             if (value.setModel == StringValueType::SetModel::NX)
+             {
+                 resValue.setNilFlag();
+                 return;
+             }
+             if (value.isReturnOldValue)
+                 resValue.setNilFlag();
+
+             setNewKeyValue(commandParams.key);
+             return;
+         }
+
+         if (value.setModel == StringValueType::SetModel::XX)
+         {resValue.setNilFlag();
+             return;
+         }
+         if (value.isReturnOldValue)
+             resValue.setStringValue(it->second);
+
+         if (eventAddObserverParams.expire != std::chrono::milliseconds(0))
+             EVENT_OBSERVER_EMIT(EventType::RESET_EXPIRE);
+
+         it->second = value.value;
+    }
     // 设置key ，如果有过期时间需要提前设置
     void setNewKeyValue (const std::string &key)
     {
@@ -410,11 +345,8 @@ private:
     }
 
     KvHashTable <KeyType, ValueType> keyValues {};
-    static constexpr const char *commands[]
-        { "set", "get", "incr", "incrby", "incrbyfloat", "decr", "decrby", "append", "mset" };
 
     static StringValueType value;
 };
 StringValueType StringCommandHandler::value;
-constexpr const char *StringCommandHandler::commands[];
 #endif //LINUX_SERVER_LIB_KV_STORE_COMMAND_STRUCTS_KV_STRING_COMMAND_H_

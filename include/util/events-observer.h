@@ -10,7 +10,7 @@
 #include <unordered_map>
 #include <functional>
 
-template <class EventsKeyType = std::string>
+template <class EventsKeyType = StringType>
 class EventsObserver
 {
 public:

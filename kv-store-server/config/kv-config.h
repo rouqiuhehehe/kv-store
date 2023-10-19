@@ -7,7 +7,6 @@
 #include <fstream>
 #include "printf-color.h"
 #include "util/string-helper.h"
-#include "data-structure/kv-value.h"
 #include "data-structure/kv-hash-table.h"
 
 #define LINE_BUFFER_SIZE 128
@@ -15,7 +14,10 @@
 #define BOOL_YES "yes"
 #define BOOL_NO "no"
 
+#define ENUM_SET_NIL -1
+
 #define GET_ENUM_UINT64(v) static_cast<uint64_t>(v)
+#define GET_ENUM_INT(v) static_cast<int>(v)
 #define CREATE_CONFIG_ADD_MAP_COMMON(name) \
         configParseMap[#name] = &(name);  \
         (name).getHandler().init()
@@ -41,18 +43,48 @@
 #define CREATE_BOOL_CONFIG(name, flags, defaultValue, configAddr) \
         CREATE_BOOL_CONFIG_CUSTOM(__KV_PRIVATE__::BoolConfigData, name, flags, defaultValue, configAddr)
 
-using StringType = KeyType;
+#define CREATE_BOOL_CONFIG_CUSTOM(Class, name, flags, defaultValue, configAddr) \
+        static Class name(defaultValue,configAddr,GET_ENUM_UINT64(flags),#name);  \
+        CREATE_CONFIG_ADD_MAP_COMMON(name)
+
+#define CREATE_ENUM_CONFIG(name, flags, enumSet, defaultValue, configAddr) \
+        CREATE_ENUM_CONFIG_CUSTOM(__KV_PRIVATE__::EnumConfigData, name, flags, enumSet, defaultValue, configAddr)
+
+#define CREATE_ENUM_CONFIG_CUSTOM(Class, name, flags, enumSet, defaultValue, configAddr) \
+        static Class name(enumSet,defaultValue,configAddr,GET_ENUM_UINT64(flags),#name);  \
+        CREATE_CONFIG_ADD_MAP_COMMON(name)
+
+enum class ListMaxListPackSizeType
+{
+    TYPE_NUM,  // 最大数量
+    TYPE_SIZE  // 最大字节数
+};
+struct ListMaxListPackSize
+{
+    ListMaxListPackSizeType type;
+    uint16_t number;
+};
 struct KvConfigFields // NOLINT
 {
     StringType bind[BIND_MAX + 1];
-    uint16_t port;
+    uint32_t port;
     bool ioThreadsDoReads;
-    uint16_t ioThreads;
+    uint32_t ioThreads;
+    bool daemonize;
+    StringType pidFile;
+    // 日志路径
+    StringType logFile;
+    int logLevel;
+    uint32_t databases;
+    uint32_t timeout;
+    bool protectedMode;
+    StringType requirePass;
+    ListMaxListPackSize listMaxListPackSize;
 };
 
 namespace __KV_PRIVATE__
 {
-#define CONVERT_EMPTY_TO_NULL_VAL "NULL"
+#define CONVERT_EMPTY_TO_NULL_VAL "(NULL)"
 #define NUMERIC_ASSIGN_VALUE(val, field) *base->data.numeric.configValue.field = val
 #define NUMERIC_SET_VALUE(val) \
     switch (base->data.numeric.numericType) \
@@ -171,8 +203,26 @@ namespace __KV_PRIVATE__
         template <class R>
         EnumSet (R &&name, int val) // NOLINT
             : name(std::forward <R>(name)), val(val) {}
+
+        EnumSet () = default;
+
+        inline bool operator== (int v) const noexcept { return val == v; }
+        inline bool operator!= (int v) const noexcept { return !(val == v); } // NOLINT
+        inline bool operator== (const StringType &n) const noexcept { return name == n; }
+        inline bool operator!= (const StringType &n) const noexcept
+        {
+            return !(name == n);
+        } // NOLINT
         StringType name;
-        int val;
+        int val = ENUM_SET_NIL;
+    };
+
+    EnumSet logLevelSet[] {
+        { "debug", GET_ENUM_INT(Logger::Level::DEBUG) },
+        { "notice", GET_ENUM_INT(Logger::Level::NOTICE) },
+        { "warning", GET_ENUM_INT(Logger::Level::WARNING) },
+        { "error", GET_ENUM_INT(Logger::Level::ERROR) },
+        {}
     };
 
     struct StandardConfig // NOLINT
@@ -438,7 +488,7 @@ namespace __KV_PRIVATE__
         }
         ReturnNum set (const StringType &it) const noexcept override
         {
-            unsigned long long data, oldValue;
+            long long data, oldValue;
             if (!isValid(it, &data))
                 return ReturnNum::FAILURE;
 
@@ -456,28 +506,128 @@ namespace __KV_PRIVATE__
             return std::to_string(oldValue);
         }
 
-    private:
-        bool isValid (const StringType &it, unsigned long long *data) const noexcept
+    protected:
+        virtual bool isValid (const StringType &it, long long *data) const noexcept
         {
-            bool success = Utils::StringHelper::stringIsULL(it, data);
+            bool success = Utils::StringHelper::stringIsLL(it, data);
             if (!success)
+            {
+                PRINT_ERROR("check the value in %s : %s, must be number",
+                    base->name.c_str(),
+                    it.c_str());
                 return false;
+            }
 
-            if (*data < min || *data > max)
+            if (base->data.numeric.numericType == NumericType::NUMERIC_TYPE_UINT ||
+                base->data.numeric.numericType == NumericType::NUMERIC_TYPE_SIZE_T ||
+                base->data.numeric.numericType == NumericType::NUMERIC_TYPE_TIME_T ||
+                base->data.numeric.numericType == NumericType::NUMERIC_TYPE_ULONG ||
+                base->data.numeric.numericType == NumericType::NUMERIC_TYPE_ULONG_LONG)
+                success = static_cast<unsigned long long>(*data) < min
+                    || static_cast<unsigned long long>(*data) > max;
+            else
+                success =
+                    *data < static_cast<long long>(min) || *data > static_cast<long long>(max);
+            if (success)
             {
                 PRINT_ERROR("check the value in %s : %s , must in min(%llu)-max(%llu)",
-                            base->name.c_str(),
-                            it.c_str(),
-                            min,
-                            max);
+                    base->name.c_str(),
+                    it.c_str(),
+                    min,
+                    max);
                 return false;
             }
 
             return true;
         }
 
+    private:
         unsigned long long min;
         unsigned long long max;
+    };
+
+    struct NumericConfigDataHandlerListMaxListPackSize : NumericConfigDataHandler
+    {
+        using NumericConfigDataHandler::NumericConfigDataHandler;
+        void init () const noexcept override
+        {
+            setListMaxListPackSizeConfig(static_cast<int>(base->data.numeric.defaultValue));
+        }
+        ReturnNum set (const StringType &it) const noexcept override
+        {
+            long long data;
+            if (!isValid(it, &data))
+                return ReturnNum::FAILURE;
+
+            return setListMaxListPackSizeConfig(static_cast<int>(data));
+        }
+        StringType get () const noexcept override
+        {
+            auto configPtr = getListMaxListPackSizePtr();
+            StringType str;
+            switch (configPtr->type)
+            {
+                case ListMaxListPackSizeType::TYPE_NUM:
+                    str = std::to_string(configPtr->number);
+                    break;
+                case ListMaxListPackSizeType::TYPE_SIZE:
+                    str = std::to_string(configPtr->number / 1024) + "kb";
+                    break;
+            }
+
+            return str;
+        }
+
+    private:
+        inline ListMaxListPackSize *getListMaxListPackSizePtr () const noexcept
+        {
+            return reinterpret_cast<ListMaxListPackSize *>(
+                reinterpret_cast<char *>(base->data.numeric.configValue.i)
+                    - sizeof(ListMaxListPackSizeType));
+        }
+
+        ReturnNum setListMaxListPackSizeConfig (int t) const
+        {
+            auto *configPtr = getListMaxListPackSizePtr();
+            uint16_t max;
+            ListMaxListPackSizeType type;
+            if (t < 0)
+            {
+                type = ListMaxListPackSizeType::TYPE_SIZE;
+                if (t < -5)
+                {
+                    PRINT_ERROR("config listMaxListPackSize error : %d is not allowed [-1 ~ -5]",
+                        t);
+                    return ReturnNum::FAILURE;
+                }
+                max = (1 << (-t + 1)) * 1024;
+            }
+            else
+            {
+                type = ListMaxListPackSizeType::TYPE_NUM;
+                max = static_cast<uint16_t>(t);
+            }
+
+            if (configPtr->type == type && configPtr->number == max)
+                return ReturnNum::NO_CHANGES;
+
+            configPtr->type = type;
+            configPtr->number = max;
+            return ReturnNum::SUCCESS;
+        }
+        bool isValid (const StringType &it, long long int *data) const noexcept override
+        {
+            bool ret = NumericConfigDataHandler::isValid(it, data);
+            if (ret && *data == 0)
+            {
+                PRINT_ERROR("check the value in %s : %s, 0 is not allow",
+                    base->name.c_str(),
+                    it.c_str());
+                return false;
+            }
+
+            return ret;
+        }
     };
 
     struct BoolConfigDataHandler : ConfigDataHandler
@@ -501,6 +651,7 @@ namespace __KV_PRIVATE__
             }
 
             *base->data.yesno.configValue = value;
+            return ReturnNum::SUCCESS;
         }
         StringType get () const noexcept override
         {
@@ -543,8 +694,10 @@ namespace __KV_PRIVATE__
                 }
                 else
                 {
-                    PRINT_ERROR("this param not be null , check %s", it.c_str());
-                    return ReturnNum::FAILURE;
+                    base->data.string.configValue->clear();
+                    // PRINT_ERROR("this param not be null , check %s", it.c_str());
+                    // return ReturnNum::FAILURE;
+                    return ReturnNum::SUCCESS;
                 }
             }
             if (*base->data.string.configValue == it)
@@ -571,8 +724,8 @@ namespace __KV_PRIVATE__
             if (it.size() > BIND_MAX)
             {
                 PRINT_ERROR("bind params out of the max length, max : %d, params len : %zu",
-                            BIND_MAX,
-                            it.size());
+                    BIND_MAX,
+                    it.size());
                 return ReturnNum::FAILURE;
             }
 
@@ -600,6 +753,40 @@ namespace __KV_PRIVATE__
         }
     };
 
+    struct EnumConfigDataHandler : ConfigDataHandler
+    {
+        using ConfigDataHandler::ConfigDataHandler;
+        void init () const noexcept override
+        {
+            *base->data.enumd.configValue = base->data.enumd.defaultValue;
+        }
+        ReturnNum set (const StringType &it) const noexcept override
+        {
+            for (int i = 0; base->data.enumd.enumSet[i] != ENUM_SET_NIL; ++i)
+            {
+                if (base->data.enumd.enumSet[i] == it)
+                {
+                    if (base->data.enumd.enumSet[i] == *base->data.enumd.configValue)
+                        return ReturnNum::NO_CHANGES;
+
+                    *base->data.enumd.configValue = base->data.enumd.enumSet[i].val;
+                    return ReturnNum::SUCCESS;
+                }
+            }
+
+            return ReturnNum::FAILURE;
+        }
+        StringType get () const noexcept override
+        {
+            for (int i = 0; base->data.enumd.enumSet[i] != ENUM_SET_NIL; ++i)
+            {
+                if (base->data.enumd.enumSet[i] == *base->data.enumd.configValue)
+                    return base->data.enumd.enumSet[i].name;
+            }
+            return "";
+        }
+    };
+
     struct NumericConfigData : ConfigDataBase
     {
         template <class T, class R>
@@ -619,6 +806,30 @@ namespace __KV_PRIVATE__
 
     private:
         NumericConfigDataHandler handler;
+    };
+
+    struct NumericConfigDataListMaxListPackSize : ConfigDataBase
+    {
+        template <class T, class R>
+        NumericConfigDataListMaxListPackSize (
+            NumericType numericType,
+            long long defaultValue,
+            T *value,
+            uint64_t flags,
+            R &&name,
+            unsigned long long min,
+            unsigned long long max
+        )
+            : ConfigDataBase(numericType, defaultValue, value, flags, name),
+              handler(this, min, max) {}
+
+        const NumericConfigDataHandlerListMaxListPackSize &getHandler () const noexcept override
+        {
+            return handler;
+        }
+
+    private:
+        NumericConfigDataHandlerListMaxListPackSize handler;
     };
 
     struct BoolConfigData : ConfigDataBase
@@ -644,16 +855,28 @@ namespace __KV_PRIVATE__
         StringConfigDataHandler handler { this };
     };
 
-    struct StringConfigDataBind : StringConfigData
+    struct StringConfigDataBind : ConfigDataBase
     {
         // using StringConfigData::StringConfigData;
         template <class ...Arg>
         explicit StringConfigDataBind (Arg &&...arg)
-            : StringConfigData(std::forward <Arg>(arg)...) {}
+            : ConfigDataBase(std::forward <Arg>(arg)...) {}
         const StringConfigDataHandlerBind &getHandler () const noexcept override { return handler; }
 
     private:
         StringConfigDataHandlerBind handler { this };
+    };
+
+    struct EnumConfigData : ConfigDataBase
+    {
+        template <class ...Arg>
+        explicit EnumConfigData (Arg &&...arg)
+            : ConfigDataBase(std::forward <Arg>(arg)...) {}
+
+        const ConfigDataHandler &getHandler () const noexcept override { return handler; }
+
+    private:
+        EnumConfigDataHandler handler { this };
     };
 };
 
@@ -750,34 +973,94 @@ private:
     static void loadAllConfig ()
     {
         CREATE_NUMERIC_CONFIG(port,
-                              __KV_PRIVATE__::ConfigFlag::MODIFIABLE_CONFIG,
-                              __KV_PRIVATE__::NumericType::NUMERIC_TYPE_UINT,
-                              3000,
-                              &config.port,
-                              0,
-                              65535);
+            __KV_PRIVATE__::ConfigFlag::MODIFIABLE_CONFIG,
+            __KV_PRIVATE__::NumericType::NUMERIC_TYPE_UINT,
+            3000,
+            &config.port,
+            0,
+            65535);
 
         CREATE_STRING_CONFIG_CUSTOM(__KV_PRIVATE__::StringConfigDataBind, bind,
-                                    GET_ENUM_UINT64(__KV_PRIVATE__::ConfigFlag::MODIFIABLE_CONFIG)
-                                        | GET_ENUM_UINT64(__KV_PRIVATE__::ConfigFlag::MULTI_ARG_CONFIG),
-                                    "0.0.0.0",
-                                    config.bind,
-                                    false);
+            GET_ENUM_UINT64(__KV_PRIVATE__::ConfigFlag::MODIFIABLE_CONFIG)
+                | GET_ENUM_UINT64(__KV_PRIVATE__::ConfigFlag::MULTI_ARG_CONFIG),
+            "0.0.0.0",
+            config.bind,
+            false);
 
         CREATE_BOOL_CONFIG(ioThreadsDoReads,
-                           GET_ENUM_UINT64(__KV_PRIVATE__::ConfigFlag::IMMUTABLE_CONFIG)
-                               | GET_ENUM_UINT64(__KV_PRIVATE__::ConfigFlag::DEBUG_CONFIG),
-                           true,
-                           &config.ioThreadsDoReads);
+            GET_ENUM_UINT64(__KV_PRIVATE__::ConfigFlag::IMMUTABLE_CONFIG)
+                | GET_ENUM_UINT64(__KV_PRIVATE__::ConfigFlag::DEBUG_CONFIG),
+            true,
+            &config.ioThreadsDoReads);
 
         CREATE_NUMERIC_CONFIG(ioThreads,
-                              GET_ENUM_UINT64(__KV_PRIVATE__::ConfigFlag::IMMUTABLE_CONFIG)
-                                  | GET_ENUM_UINT64(__KV_PRIVATE__::ConfigFlag::DEBUG_CONFIG),
-                              __KV_PRIVATE__::NumericType::NUMERIC_TYPE_UINT,
-                              4,
-                              &config.ioThreads,
-                              1,
-                              128);
+            GET_ENUM_UINT64(__KV_PRIVATE__::ConfigFlag::IMMUTABLE_CONFIG)
+                | GET_ENUM_UINT64(__KV_PRIVATE__::ConfigFlag::DEBUG_CONFIG),
+            __KV_PRIVATE__::NumericType::NUMERIC_TYPE_UINT,
+            4,
+            &config.ioThreads,
+            1,
+            128);
+
+        CREATE_BOOL_CONFIG(daemonize,
+            __KV_PRIVATE__::ConfigFlag::IMMUTABLE_CONFIG,
+            true,
+            &config.daemonize);
+
+        CREATE_STRING_CONFIG(pidFile,
+            __KV_PRIVATE__::ConfigFlag::IMMUTABLE_CONFIG,
+            CONVERT_EMPTY_TO_NULL_VAL,
+            &config.pidFile,
+            true);
+
+        CREATE_STRING_CONFIG(logFile,
+            __KV_PRIVATE__::ConfigFlag::IMMUTABLE_CONFIG,
+            "",
+            &config.logFile,
+            false);
+
+        CREATE_ENUM_CONFIG(logLevel,
+            __KV_PRIVATE__::ConfigFlag::MODIFIABLE_CONFIG,
+            __KV_PRIVATE__::logLevelSet,
+            GET_ENUM_INT(Logger::Level::NOTICE),
+            &config.logLevel);
+
+        CREATE_NUMERIC_CONFIG(databases,
+            __KV_PRIVATE__::ConfigFlag::IMMUTABLE_CONFIG,
+            __KV_PRIVATE__::NumericType::NUMERIC_TYPE_UINT,
+            1,
+            &config.databases,
+            1,
+            16);
+
+        CREATE_NUMERIC_CONFIG(timeout,
+            __KV_PRIVATE__::ConfigFlag::MODIFIABLE_CONFIG,
+            __KV_PRIVATE__::NumericType::NUMERIC_TYPE_UINT,
+            0,
+            &config.timeout,
+            0,
+            std::numeric_limits <uint32_t>::max());
+
+        CREATE_BOOL_CONFIG(protectedMode,
+            __KV_PRIVATE__::ConfigFlag::MODIFIABLE_CONFIG,
+            true,
+            &config.protectedMode);
+
+        CREATE_STRING_CONFIG(requirePass,
+            GET_ENUM_UINT64(__KV_PRIVATE__::ConfigFlag::MODIFIABLE_CONFIG)
+                | GET_ENUM_UINT64(__KV_PRIVATE__::ConfigFlag::SENSITIVE_CONFIG),
+            CONVERT_EMPTY_TO_NULL_VAL,
+            &config.requirePass,
+            true);
+
+        CREATE_NUMERIC_CONFIG_CUSTOM(__KV_PRIVATE__::NumericConfigDataListMaxListPackSize,
+            listMaxListPackSize,
+            __KV_PRIVATE__::ConfigFlag::MODIFIABLE_CONFIG,
+            __KV_PRIVATE__::NumericType::NUMERIC_TYPE_INT,
+            -2,
+            &config.listMaxListPackSize.number,
+            -5,
+            std::numeric_limits <uint16_t>::max());
     }
 
     static KvConfigFields config;

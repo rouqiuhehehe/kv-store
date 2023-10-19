@@ -22,24 +22,15 @@
 
 #define MESSAGE_NIL "(nil)"
 #define MESSAGE_OK "OK"
-#define ERROR_MESSAGE_HELPER(str) "(error) " str
+#define ERROR_MESSAGE_HELPER(str) str
 
-template <class _Key, class _Val>
-using KvHashTable = IncrementallyHashTable <_Key, _Val>;
-
-using KeyType = std::string;
-using IntegerType = long long;
-using FloatType = double;
-using ValueType = std::string;
-
-template <class T>
-using ArrayType = std::vector <T>;
+#define DEFAULT_USER_NAME "default"
 
 enum class StructType { NIL = -1, STRING, LIST, HASH, SET, ZSET, END };
 enum EventType { ADD_KEY, RESET_EXPIRE, DEL_KEY };
 using EventsObserverType = EventsObserver <int>;
 
-typedef struct
+struct CommandParams
 {
     KeyType command;
     KeyType key;
@@ -65,7 +56,7 @@ typedef struct
 
         return str;
     }
-} CommandParams;
+};
 struct StringValueType
 {
     enum class SetModel
@@ -126,7 +117,13 @@ struct ResValueType : Utils::AllDefaultCopy
         // hincrby 储存value不为整数时报错
         HASH_VALUE_NOT_INTEGER,
         // hincrbyfloat 储存value不为double时报错
-        HASH_VALUE_NOT_FLOAT
+        HASH_VALUE_NOT_FLOAT,
+        // 设置requirePass后，未使用auth 登录，操作后报错
+        NO_AUTHENTICATION,
+        // 设置requirePass后，使用auth登录，密码错误后报错
+        INVALID_PASSWORD,
+        // 未设置requirePass时，使用auth命令
+        WITHOUT_PASSWORD
     };
 
     ResValueType () = default;
@@ -185,7 +182,7 @@ struct ResValueType : Utils::AllDefaultCopy
         {
             case ErrorType::WRONGTYPE:
                 value = ERROR_MESSAGE_HELPER(
-                            "WRONGTYPE Operation against a key holding the wrong kind of value");
+                    "WRONGTYPE Operation against a key holding the wrong kind of value");
                 break;
             case ErrorType::UNKNOWN_COMMAND:
                 paramsStream.str("");
@@ -235,6 +232,16 @@ struct ResValueType : Utils::AllDefaultCopy
             case ErrorType::HASH_VALUE_NOT_FLOAT:
                 value = "ERR hash value is not a float";
                 break;
+            case ErrorType::NO_AUTHENTICATION:
+                value = "NOAUTH Authentication required.";
+                break;
+            case ErrorType::INVALID_PASSWORD:
+                value = "WRONGPASS invalid username-password pair or user is disabled.";
+                break;
+            case ErrorType::WITHOUT_PASSWORD:
+                value =
+                    "ERR AUTH <password> called without any password configured for the default user. Are you sure your configuration is correct?";
+                break;
         }
     }
 
@@ -249,10 +256,11 @@ struct ResValueType : Utils::AllDefaultCopy
         value = MESSAGE_OK;
     }
 
-    inline void setIntegerValue (const IntegerType num)
+    template <class T>
+    inline void setIntegerValue (const T num)
     {
         model = ReplyModel::REPLY_INTEGER;
-        value = std::to_string(num);
+        value = std::to_string(static_cast<IntegerType>(num));
     }
 
     inline void setStringValue (const ValueType &v)
@@ -357,9 +365,12 @@ private:
                 resMessage = "(integer) ";
                 resMessage += value;
                 break;
+            case ResValueType::ReplyModel::REPLY_ERROR:
+                resMessage = "(error) ";
+                resMessage += value;
+                break;
             case ResValueType::ReplyModel::REPLY_STATUS:
             case ResValueType::ReplyModel::REPLY_NIL:
-            case ResValueType::ReplyModel::REPLY_ERROR:
             case ResValueType::ReplyModel::REPLY_STRING:
                 resMessage = value;
                 break;
@@ -382,11 +393,14 @@ private:
 
 struct EventObserverParams
 {
+    EventObserverParams () noexcept = default;
     std::string key;
-    StructType structType;
+    StructType structType = StructType::NIL;
 };
 struct EventAddObserverParams : public EventObserverParams
 {
+    EventAddObserverParams () noexcept = default;
     std::chrono::milliseconds expire { 0 };
 };
+
 #endif //LINUX_SERVER_LIB_KV_STORE_KV_VALUE_H_

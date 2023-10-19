@@ -4,6 +4,8 @@
 
 #ifndef LINUX_SERVER_LIB_INCLUDE_PRINTF_COLOR_H_
 #define LINUX_SERVER_LIB_INCLUDE_PRINTF_COLOR_H_
+
+#include <cstdarg>
 #define NONE                 "\e[0m"
 #define BLACK                "\e[0;30m"
 #define L_BLACK              "\e[1;30m"
@@ -36,20 +38,110 @@
 #define STD
 #endif
 
-#ifdef NDEBUG
-#define PRINT_INFO(str, ...)
-#define PRINT_ERROR(str, ...)
-#define PRINT_WARNING(str, ...)
-#else
-
-#define PRINT_INFO(str, ...) STD printf(UNDERLINE "%s [%s:%d]" NONE "\t" str "\n", \
+#define PRINT_DEBUG(str, ...) Logger::printInfo(Logger::Level::DEBUG, UNDERLINE "%s [%s:%d]" NONE "\t" str "\n", \
                                 __FILE__, __FUNCTION__, __LINE__, ##__VA_ARGS__)
 
-#define PRINT_ERROR(str, ...) STD fprintf(stderr, UNDERLINE "%s [%s:%d]" NONE "\t" str "\n", \
+#define PRINT_INFO(str, ...) Logger::printInfo(Logger::Level::NOTICE, UNDERLINE "%s [%s:%d]" NONE "\t" str "\n", \
                                 __FILE__, __FUNCTION__, __LINE__, ##__VA_ARGS__)
 
-#define PRINT_WARNING(str, ...) STD printf(BROWN UNDERLINE"%s [%s:%d]" NONE "\t" YELLOW str "\n" NONE, \
+#define PRINT_ERROR(str, ...) Logger::printErr(UNDERLINE "%s [%s:%d]" NONE "\t" str "\n", \
+                                __FILE__, __FUNCTION__, __LINE__, ##__VA_ARGS__)
+
+#define PRINT_WARNING(str, ...) Logger::printInfo(Logger::Level::WARNING, BROWN UNDERLINE"%s [%s:%d]" NONE "\t" YELLOW str "\n" NONE, \
                                     __FILE__, __FUNCTION__, __LINE__, ##__VA_ARGS__)
 
-#endif
+namespace Utils
+{
+    std::string getDateNow (const std::string &);
+}
+class Logger
+{
+public:
+    enum class Level
+    {
+        DEBUG,
+        NOTICE,
+        WARNING,
+        ERROR
+    };
+    ~Logger () noexcept
+    {
+        fclose(in);
+        fclose(out);
+        fclose(err);
+    }
+    static bool initLogger (
+        const char *inPath,
+        const char *outPath,
+        const char *errPath,
+        Level level
+    )
+    {
+        logLevel = level;
+        return setStandardStreams(inPath, outPath, errPath);
+    }
+
+    static void printInfo (Level level, const char *str, ...)
+    {
+        if (level >= logLevel)
+        {
+            va_list list;
+            va_start(list, str);
+            fprintf(out, "[%s] ", Utils::getDateNow("%Y-%m-%d %H:%M:%S").c_str());
+            vfprintf(out, str, list);
+            va_end(list);
+        }
+    }
+
+    static void printErr (const char *str, ...)
+    {
+        va_list list;
+        va_start(list, str);
+        fprintf(err, "[%s] ", Utils::getDateNow("%Y-%m-%d %H:%M:%S").c_str());
+        vfprintf(err, str, list);
+        va_end(list);
+    }
+
+private:
+    static bool setStandardStreams (const char *inPath, const char *outPath, const char *errPath)
+    {
+        out = fopen(outPath, "a");
+        if (out == nullptr)
+        {
+            PRINT_ERROR("fopen %s error : %s", outPath, strerror(errno));
+            return false;
+        }
+
+        in = fopen(inPath, "r");
+        if (in == nullptr)
+        {
+            PRINT_ERROR("fopen %s error : %s", inPath, strerror(errno));
+            return false;
+        }
+
+        err = fopen(errPath, "a");
+        if (err == nullptr)
+        {
+            PRINT_ERROR("fopen %s error : %s", errPath, strerror(errno));
+            return false;
+        }
+
+        setbuf(out, nullptr);
+        setbuf(in, nullptr);
+        setbuf(err, nullptr);
+
+        return true;
+    }
+
+private:
+    static FILE *in;
+    static FILE *out;
+    static FILE *err;
+
+    static Level logLevel;
+};
+FILE *Logger::in = stdin;
+FILE *Logger::out = stdout;
+FILE *Logger::err = stderr;
+Logger::Level Logger::logLevel = Logger::Level::DEBUG;
 #endif //LINUX_SERVER_LIB_INCLUDE_PRINTF_COLOR_H_

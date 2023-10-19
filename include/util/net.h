@@ -22,6 +22,19 @@ namespace Utils
         {
             return fcntl(sockfd, F_SETFL, fcntl(sockfd, F_GETFL) | O_NONBLOCK);
         }
+
+        static inline struct ifaddrs *getIfconfig () noexcept
+        {
+            struct ifaddrs *ifAddr;
+            // 获取接口地址信息
+            if (getifaddrs(&ifAddr) == -1)
+            {
+                PRINT_ERROR("Failed to get interface address.");
+                return nullptr;
+            }
+
+            return ifAddr;
+        }
     }
 };
 #endif //LINUX_SERVER_LIB_INCLUDE_UTIL_NET_H_

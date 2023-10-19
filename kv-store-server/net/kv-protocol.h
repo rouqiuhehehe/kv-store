@@ -5,7 +5,7 @@
 #ifndef LINUX_SERVER_LIB_KV_STORE_NET_KV_PROTOCOL_H_
 #define LINUX_SERVER_LIB_KV_STORE_NET_KV_PROTOCOL_H_
 
-#include "data-structure/kv-value.h"
+#include <data-structure/kv-value.h>
 #define CHECK_PROTO \
         if (*(msg + offset) != '\r' || *(msg + offset + 1) != '\n' || offset > len) \
             return -EPROTO;                                                         \
@@ -16,7 +16,7 @@
         int mOffset = setOffsetUntilEnd(head);  \
         if (mOffset < 0)    \
             return mOffset;                 \
-        offset += 2;
+        offset += 2
 
 /*
  * set key 123
@@ -47,9 +47,9 @@ public:
         : KvProtocolBase(sockfd) {}
 
 protected:
-    virtual int decodeRecv (ResValueType &res)
+    virtual ssize_t decodeRecv (ResValueType &res)
     {
-        int ret;
+        ssize_t ret;
         char message[MESSAGE_SIZE_MAX];
 
         ValueType originalMessage;
@@ -133,7 +133,7 @@ private:
         if (paramsSize == 0)
         {
             res.value.clear();
-            return paramsSize;
+            return static_cast<int>(paramsSize);
         }
 
         const char *head = msg + offset;
@@ -142,7 +142,7 @@ private:
 
         CHECK_PROTO;
 
-        return paramsSize;
+        return static_cast<int>(paramsSize);
     }
 
     int decodeErrorsItem (ResValueType &res)
@@ -195,7 +195,7 @@ private:
             return -EPROTO;
         }
 
-        return msg + offset - head;
+        return static_cast<int>(msg + offset - head);
     }
 };
 
@@ -206,9 +206,9 @@ public:
         : KvProtocolBase(sockfd) {}
 
 protected:
-    virtual int encodeSend (const ResValueType &res)
+    virtual ssize_t encodeSend (const ResValueType &res)
     {
-        int sizeCount = 0;
+        size_t sizeCount = 0;
         getSizeCount(res, sizeCount);
         sendMsg.clear();
         sendMsg.reserve(sizeCount);
@@ -280,15 +280,15 @@ private:
         sendMsg += std::to_string(res.elements.size());
         sendMsg += "\r\n";
 
-        for (auto v : res.elements)
+        for (const auto &v : res.elements)
             encodeProto(v);
 
         return 0;
     }
 
-    int encodeToSend ()
+    ssize_t encodeToSend ()
     {
-        int ret;
+        ssize_t ret;
         do
         {
             ret = ::send(sockfd, sendMsg.c_str(), sendMsg.size(), 0);
@@ -296,7 +296,7 @@ private:
                 continue;
             else
                 break;
-        } while (1);
+        } while (true);
         if (ret < 0 && errno != EINTR && errno != EAGAIN)
             return -errno;
 
@@ -309,7 +309,7 @@ private:
         sendMsg += "\r\n";
     }
 
-    void getSizeCount (const ResValueType &res, int &sizeCount) const
+    void getSizeCount (const ResValueType &res, size_t &sizeCount) const
     {
         if (res.model != ResValueType::ReplyModel::REPLY_ARRAY)
             sizeCount += res.value.size() + 3;

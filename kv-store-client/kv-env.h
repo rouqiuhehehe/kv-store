@@ -90,7 +90,7 @@ private:
     {
         ip = paramsVal;
     }
-    void helpHandler () const noexcept
+    static void helpHandler () noexcept
     {
         std::cout << "Usage: redis-cli [OPTIONS] [cmd [arg [arg ...]]]\n"
                   << "  -h <hostname>      Server hostname (default: " << DEFAULT_IP << ")\n"

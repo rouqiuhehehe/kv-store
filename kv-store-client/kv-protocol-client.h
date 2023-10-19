@@ -4,6 +4,19 @@
 
 #ifndef LINUX_SERVER_LIB_KV_STORE_CLIENT_KV_PROTOCOL_CLIENT_H_
 #define LINUX_SERVER_LIB_KV_STORE_CLIENT_KV_PROTOCOL_CLIENT_H_
+#include "data-structure/kv-incrementally-hash.h"
+#include <vector>
+template <class _Key, class _Val>
+using KvHashTable = IncrementallyHashTable <_Key, _Val>;
+
+using StringType = std::string;
+using KeyType = StringType;
+using IntegerType = long long;
+using FloatType = double;
+using ValueType = StringType;
+template <class T>
+using ArrayType = std::vector <T>;
+#include "data-structure/kv-value.h"
 #include "net/kv-protocol.h"
 
 class KvProtocolClient : public KvProtocol
@@ -15,7 +28,7 @@ public:
     using KvProtocol::KvProtocol;
     using KvProtocol::decodeRecv;
 
-    int encodeSend (const std::string &msg)
+    ssize_t encodeSend (const std::string &msg)
     {
         ResValueType res;
         res.model = ResValueType::ReplyModel::REPLY_ARRAY;

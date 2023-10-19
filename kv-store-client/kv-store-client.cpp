@@ -3,7 +3,6 @@
 //
 #include "kv-env.h"
 #include "kv-tcp-client.h"
-#include <iostream>
 #include "kv-protocol-client.h"
 #include <sys/epoll.h>
 

@@ -28,6 +28,8 @@ namespace Utils
             {
                 if (str.empty())
                     return false;
+                if (str.size() > (std::numeric_limits<T>::digits10 + 1))
+                    return false;
                 size_t endPtr;
                 try
                 {

@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.13)
-project(linux-server)
+project(kv-store)
 set(EXECUTABLE_OUTPUT_PATH ${CMAKE_BINARY_DIR}/bin)
 set(CMAKE_CXX_STANDARD 11)
 set(CMAKE_VERBOSE_MAKEFILE ON)

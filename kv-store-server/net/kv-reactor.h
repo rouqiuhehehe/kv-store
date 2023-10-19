@@ -11,7 +11,7 @@
 #include <sys/epoll.h>
 #include "printf-color.h"
 #include <thread>
-#include <list>
+#include <set>
 #include <algorithm>
 #include <mutex>
 #include <atomic>
@@ -21,28 +21,13 @@
 #define SET_COMMON_EPOLL_FLAG(event) ((event) | EPOLLHUP | EPOLLRDHUP)
 
 class Tcp;
-struct SockEpollPtr
+
+struct CompareSockEpollPtr
 {
-    enum QUEUE_STATUS
+    inline bool operator() (const ParamsType *a, const ParamsType *b) const noexcept
     {
-        STATUS_LISTEN,
-        STATUE_SLEEP,
-        STATUS_RECV,
-        STATUS_RECV_DOWN,
-        STATUS_RECV_BAD,
-        STATUS_SEND,
-        STATUS_SEND_DOWN,
-        STATUS_SEND_BAD
-    };
-    explicit SockEpollPtr (int fd)
-        : fd(fd), sockaddr(sockaddr_in()) {}
-    SockEpollPtr (int fd, sockaddr_in &sockaddrIn)
-        : fd(fd), sockaddr(sockaddrIn) {}
-    int fd;
-    struct sockaddr_in sockaddr;
-    ResValueType resValue {};
-    CommandParams commandParams {};
-    QUEUE_STATUS status = STATUS_LISTEN;
+        return a->runtime < b->runtime;
+    }
 };
 struct SockEvents
 {
@@ -69,7 +54,6 @@ struct ReactorParams
 class Reactor
 {
 protected:
-    using ParamsType = SockEpollPtr;
     using Callback = std::function <void (ParamsType &)>;
 
 public:
@@ -125,12 +109,23 @@ public:
 
         epoll_ctl(epfd, EPOLL_CTL_ADD, params.fd, &event);
 
-        allEpollPtr.emplace_back(&params);
+        if (!params.isListenFd)
+            allEpollPtr.emplace(&params);
+        else
+            allListenPtr.emplace(&params);
     }
     void epollModEvent (SockEpollPtr &params, int events)
     {
         event.data.ptr = &params;
         event.events = SET_COMMON_EPOLL_FLAG(events);
+
+        // EPOLLOUT 时视为一次交互完成 更新时间
+        if (events & EPOLLOUT)
+        {
+            allEpollPtr.erase(&params);
+            params.updateTimeNow();
+            allEpollPtr.emplace(&params);
+        }
 
         epoll_ctl(epfd, EPOLL_CTL_MOD, params.fd, &event);
     }
@@ -141,13 +136,15 @@ public:
 
         epoll_ctl(epfd, EPOLL_CTL_DEL, params.fd, &event);
 
-        allEpollPtr.erase(std::find(allEpollPtr.begin(), allEpollPtr.end(), &params));
+        allEpollPtr.erase(&params);
     }
     int epollWait (ReactorParams &params) // NOLINT
     {
         long expireTime = params.expireTime.count() == 0 ? -1 : params.expireTime.count();
         params.updateTimeNow();
 
+        // 每次epoll_wait 之前检查是否有过期fd，通过config timeout 判断
+        checkTimeoutFd();
         int ret = epoll_wait(
             epfd,
             params.sockEvents.epollEvents,
@@ -184,15 +181,51 @@ public:
             delete item;
         }
 
+        for (const auto &item : allListenPtr)
+        {
+            ::close(item->fd);
+            delete item;
+        }
+
         ::close(unixfd);
         ::close(epfd);
+    }
+
+private:
+    void checkTimeoutFd ()
+    {
+        auto timeout = KvConfig::getConfig().timeout;
+        if (timeout > 0 && !allEpollPtr.empty())
+        {
+            static auto end = allEpollPtr.end();
+            bool needErase = false;
+            auto it = allEpollPtr.begin();
+            auto now = std::chrono::duration_cast <std::chrono::milliseconds>(Utils::getTimeNow());
+            do
+            {
+                // 未超时
+                if (((*it)->runtime + std::chrono::milliseconds(timeout * 1000)) > now)
+                    break;
+
+                PRINT_INFO("socket %d (%s) timeout",
+                    (*it)->fd,
+                    Utils::getIpAndHost((*it)->sockaddr).c_str());
+                ::close((*it)->fd);
+                delete *it;
+                needErase = true;
+            } while (++it != end);
+
+            if (needErase)
+                allEpollPtr.erase(allEpollPtr.begin(), it);
+        }
     }
 
 private:
     int epfd;
     int unixfd;
     struct epoll_event event {};
-    std::list <SockEpollPtr *> allEpollPtr {};
+    std::set <ParamsType *, CompareSockEpollPtr> allEpollPtr;
+    std::set <ParamsType *> allListenPtr;
 };
 
 class IoReactor : protected Reactor
@@ -304,7 +337,7 @@ private:
         KvProtocol recvProtocol(fnParams.fd);
 
         ResValueType recvValue;
-        int ret = recvProtocol.decodeRecv(recvValue);
+        ssize_t ret = recvProtocol.decodeRecv(recvValue);
         // 不做处理  留给mainReactor去处理
         if (ret < 0)
         {
@@ -314,8 +347,8 @@ private:
         else if (ret == 0)
         {
             PRINT_INFO("pipe close : %s, sockfd : %d",
-                       Utils::getIpAndHost(fnParams.sockaddr).c_str(),
-                       fnParams.fd);
+                Utils::getIpAndHost(fnParams.sockaddr).c_str(),
+                fnParams.fd);
             fnParams.status = SockEpollPtr::STATUS_RECV_BAD;
         }
         else
@@ -325,17 +358,17 @@ private:
             fnParams.status = SockEpollPtr::STATUS_RECV_DOWN;
 
             PRINT_INFO("get client command : %s,  addr : %s, sockfd : %d, thread : %lu",
-                       fnParams.commandParams.toString().c_str(),
-                       Utils::getIpAndHost(fnParams.sockaddr).c_str(),
-                       fnParams.fd,
-                       pthread_self());
+                fnParams.commandParams.toString().c_str(),
+                Utils::getIpAndHost(fnParams.sockaddr).c_str(),
+                fnParams.fd,
+                pthread_self());
         }
     }
 
     void sendCallback (ParamsType &fnParams) // NOLINT
     {
         KvProtocol kvProtocolSend(fnParams.fd);
-        int ret = kvProtocolSend.encodeSend(fnParams.resValue);
+        ssize_t ret = kvProtocolSend.encodeSend(fnParams.resValue);
         if (ret < 0)
         {
             PRINT_ERROR("send error : %s", std::strerror(errno));
@@ -344,8 +377,8 @@ private:
         else if (ret == 0)
         {
             PRINT_INFO("pipe close : %s, sockfd : %d",
-                       Utils::getIpAndHost(fnParams.sockaddr).c_str(),
-                       fnParams.fd);
+                Utils::getIpAndHost(fnParams.sockaddr).c_str(),
+                fnParams.fd);
             fnParams.status = SockEpollPtr::STATUS_SEND_BAD;
         }
         else
@@ -387,6 +420,8 @@ public:
             ioReactor = new IoReactor[IoThreadNum];
             ioThread = new std::thread[IoThreadNum];
         }
+
+        ifAddr = Utils::Net::getIfconfig();
     }
 
     inline void setListenfdLen (size_t len) noexcept
@@ -407,6 +442,8 @@ public:
             delete[] ioReactor;
             delete[] ioThread;
         }
+
+        freeifaddrs(ifAddr);
     }
 
     void mainLoop ()
@@ -442,8 +479,8 @@ public:
                 if (event->events & EPOLLRDHUP)
                 {
                     PRINT_INFO("对端关闭， addr : %s , fd : %d",
-                               Utils::getIpAndHost(epollPtr->sockaddr).c_str(),
-                               epollPtr->fd);
+                        Utils::getIpAndHost(epollPtr->sockaddr).c_str(),
+                        epollPtr->fd);
                     closeSock(*epollPtr);
                 }
                 else if (event->events & EPOLLHUP)
@@ -451,7 +488,7 @@ public:
                     PRINT_WARNING("连接发生挂起 : %d", epollPtr->fd);
                     closeSock(*epollPtr);
                 }
-                else if (sockfdIsListenfd(epollPtr->fd))
+                else if (epollPtr->isListenFd)
                     acceptCallback(*epollPtr);
                 else if (event->events & EPOLLIN)
                     recvCallback(*epollPtr);
@@ -464,8 +501,6 @@ public:
             if (onceLoopRecvSum)
                 distributeRecvSocket();
         }
-
-        std::cout << terminate << std::endl;
     }
 private:
     void setIoThread ()
@@ -491,18 +526,20 @@ private:
             return;
         }
 
+        // 检查配置protectedMode
+        checkProtectedMode();
         // int bufferSize = MESSAGE_SIZE_MAX;
         // socklen_t bufferSizeLen = sizeof(bufferSize);
         // setsockopt(fd, SOL_SOCKET, SO_RCVBUF, &bufferSize, bufferSizeLen);
         Utils::Net::setSockReuseAddr(fd);
         Utils::Net::setSockNonblock(fd);
-        auto *sockParams = new SockEpollPtr(fd, clientAddr);
+        auto *sockParams = new ParamsType(fd, clientAddr);
         epollAddEvent(*sockParams);
 
         PRINT_INFO("accept by %s:%d , fd : %d",
-                   inet_ntoa(clientAddr.sin_addr),
-                   ntohs(clientAddr.sin_port),
-                   fd);
+            inet_ntoa(clientAddr.sin_addr),
+            ntohs(clientAddr.sin_port),
+            fd);
     }
     void recvCallback (ParamsType &fnParams)
     {
@@ -569,7 +606,7 @@ private:
     {
         for (SockEpollPtr *sockEpollPtr : sockfdQueue())
         {
-            sockEpollPtr->resValue = commandHandler.handlerCommand(sockEpollPtr->commandParams);
+            commandHandler.handlerCommand(*sockEpollPtr);
             epollModEvent(*sockEpollPtr, SET_COMMON_EPOLL_FLAG(EPOLLOUT));
         }
 
@@ -582,6 +619,25 @@ private:
             epollModEvent(*sockEpollPtr, SET_COMMON_EPOLL_FLAG(EPOLLIN));
 
         sockfdQueue().clear();
+    }
+
+    bool checkProtectedMode ()
+    {
+        auto config = KvConfig::getConfig();
+        if (config.protectedMode && config.requirePass == CONVERT_EMPTY_TO_NULL_VAL)
+        {
+            for (struct ifaddrs *ifa = ifAddr; ifa; ifa = ifa->ifa_next)
+            {
+                auto sockaddrIn = reinterpret_cast<struct sockaddr_in *>(ifa->ifa_addr);
+                if (sockaddrIn->sin_family == clientAddr.sin_family
+                    && sockaddrIn->sin_addr.s_addr == clientAddr.sin_addr.s_addr)
+                    return true;
+            }
+
+            return false;
+        }
+
+        return true;
     }
 
     inline void closeSock (ParamsType &fnParams) noexcept
@@ -602,14 +658,6 @@ private:
         return ioReactor[randomReactor];
     }
 
-    inline bool sockfdIsListenfd (int sockfd) const noexcept
-    {
-        for (size_t i = 0; i < listenfdLen; ++i)
-            if (sockfd == listenfd[i])
-                return true;
-        return false;
-    }
-
 private:
     bool terminate = false;
     ReactorParams params;
@@ -619,10 +667,11 @@ private:
     size_t onceLoopSendSum = 0;
     CommandHandler commandHandler;
     int *listenfd;
-    size_t listenfdLen;
+    size_t listenfdLen = 0;
 
     uint16_t IoThreadNum = 0;
     IoReactor *ioReactor;
     std::thread *ioThread;
+    struct ifaddrs *ifAddr;
 };
 #endif //LINUX_SERVER_LIB_KV_STORE_EPOLL_H_

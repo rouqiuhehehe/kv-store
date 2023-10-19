@@ -12,6 +12,7 @@
 #include "printf-color.h"
 #include <dlfcn.h>
 #include <cxxabi.h>
+#include <chrono>
 
 namespace Utils
 {
@@ -53,6 +54,23 @@ namespace Utils
         uint16_t port = ntohs(sockaddrIn.sin_port);
 
         return std::string(ip) + ":" + std::to_string(port);
+    }
+
+    inline std::string getDateNow (const std::string &format = "%Y-%m-%d %H:%M:%S")
+    {
+        char time[40];
+        auto now = std::chrono::system_clock::now();
+        auto currentTime = std::chrono::system_clock::to_time_t(now);
+
+        std::strftime(time, 40, format.c_str(), std::localtime(&currentTime));
+
+        return time;
+    }
+
+    inline std::chrono::microseconds getTimeNow () noexcept
+    {
+        return std::chrono::duration_cast <std::chrono::microseconds>(
+            std::chrono::system_clock::now().time_since_epoch());
     }
 
     template <class T>

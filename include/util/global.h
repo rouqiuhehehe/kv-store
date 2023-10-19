@@ -7,6 +7,7 @@
 #ifndef LINUX_SERVER_LIB_INCLUDE_GLOBAL_H_
 #define LINUX_SERVER_LIB_INCLUDE_GLOBAL_H_
 
+#include "printf-color.h"
 #if defined __GNUC__
 #define likely(x) __builtin_expect ((x), 1)
 #define unlikely(x) __builtin_expect ((x), 0)
@@ -23,8 +24,7 @@
 #define CHECK_RET(expr, fnName)                                                 \
             if (expr)                                                           \
             {                                                                   \
-                fprintf(stderr,"%s:%s:%d:  "#fnName" err %s\n",                 \
-                         __FILE__, __FUNCTION__, __LINE__, strerror(errno));    \
+                PRINT_ERROR(#fnName " error : %s", strerror(errno));            \
                 exit(EXIT_FAILURE);                                             \
             }
 

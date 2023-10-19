@@ -26,7 +26,6 @@ class CommandCommon
 public:
     inline virtual void clear () noexcept = 0;
     inline virtual size_t delKey (const std::string &) noexcept = 0;
-
 protected:
     /*
      * 检查参数
