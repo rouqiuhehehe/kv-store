@@ -55,19 +55,19 @@ namespace Utils
             x[4] = t;
         }
 
-        inline uint16_t intConv16 (uint16_t v)
+        inline int16_t intConv16 (int16_t v)
         {
             memConv16(&v);
             return v;
         }
 
-        inline uint32_t intConv32 (uint32_t v)
+        inline int32_t intConv32 (int32_t v)
         {
             memConv32(&v);
             return v;
         }
 
-        inline uint64_t intConv64 (uint64_t v)
+        inline int64_t intConv64 (int64_t v)
         {
             memConv64(&v);
             return v;
@@ -77,9 +77,9 @@ namespace Utils
         inline void memConv16 (void *p) {}
         inline void memConv32 (void *p) {}
         inline void memConv64 (void *p) {}
-        inline uint16_t intConv16 (uint16_t v) { return v; }
-        inline uint32_t intConv32 (uint32_t v) { return v; }
-        inline uint64_t intConv64 (uint64_t v) { return v; }
+        inline int16_t intConv16 (int16_t v) { return v; }
+        inline int32_t intConv32 (int32_t v) { return v; }
+        inline int64_t intConv64 (int64_t v) { return v; }
 #else
         static_assert(false, "unknown endian");
 #endif

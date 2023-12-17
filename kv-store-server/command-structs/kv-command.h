@@ -13,17 +13,74 @@
 #include "kv-hash-command.h"
 #include "kv-list-command.h"
 
-#define BIND_COMMANDS(structType, name, fn, self) allCommands.emplace(name, std::make_pair(structType, std::bind(fn, self, std::placeholders::_1)))
-#define BIND_BASE_COMMANDS(name, fn) BIND_COMMANDS(StructType::NIL, name, fn, this)
-#define BIND_STRING_COMMANDS(name, fn) BIND_COMMANDS(StructType::STRING, name, fn, &stringCommandHandler)
-#define BIND_HASH_COMMANDS(name, fn) BIND_COMMANDS(StructType::HASH, name, fn, &hashCommandHandler)
-
+#define BIND_COMMANDS(name, fn, emptyFn, structType, b) \
+        allCommands.emplace(name, AllCommandsSecond(static_cast<void (CommandCommon::*)(ParamsType &)>(fn),structType, emptyFn, b))
+#define BIND_BASE_COMMANDS(name, fn) BIND_COMMANDS(name, fn, nullptr, StructType::BASE, false)
+#define BIND_STRING_COMMANDS(name, fn, emptyFn, createdOnNotExist) \
+    BIND_COMMANDS(name, fn, emptyFn, StructType::STRING, createdOnNotExist)
+#define BIND_HASH_COMMANDS(name, fn, emptyFn, createdOnNotExist) \
+    BIND_COMMANDS(name, fn, emptyFn, StructType::HASH, createdOnNotExist)
+class CommandHandler;
+struct AllCommandsSecond
+{
+    AllCommandsSecond (
+        void (CommandCommon::*handler) (ParamsType &),
+        StructType structType,
+        void (ResValueType::*emptyHandler) (),
+        bool createdOnNotExist
+    )
+        : handler(handler),
+          emptyHandler(emptyHandler),
+          structType(structType),
+          createdOnNotExist(createdOnNotExist) {}
+    void (CommandCommon::*handler) (ParamsType &)  {};
+    void (ResValueType::*emptyHandler) () {};
+    StructType structType {};
+    bool createdOnNotExist;
+};
 class BaseCommandHandler : public CommandCommon
 {
 protected:
-    using ExpireMapType = KvHashTable <KeyType,
-                                       std::pair <StructType, std::chrono::milliseconds>>;
-    using AllKeyMapType = KvHashTable <KeyType, StructType>;
+    class KeyOfValue
+    {
+        friend class BaseCommandHandler;
+        friend class CommandHandler;
+    public:
+        explicit KeyOfValue (StructType structType)
+            : structType(structType)
+        {
+            switch (structType)
+            {
+                case StructType::STRING:
+                    handler = new StringCommandHandler;
+                    break;
+                case StructType::LIST:
+                    handler = new ListCommandHandler;
+                    break;
+                case StructType::HASH:
+                    handler = new HashCommandHandler;
+                    break;
+                case StructType::SET:
+                    break;
+                case StructType::ZSET:
+                    break;
+                case StructType::NIL:
+                case StructType::BASE:
+                case StructType::END:
+                    unreachable();
+                    KV_ASSERT(false);
+            }
+        }
+        ~KeyOfValue () noexcept
+        {
+            delete handler;
+        }
+    private:
+        StructType structType {};
+        std::chrono::milliseconds expire { -2 };
+        CommandCommon *handler {};
+    };
+    using KeyMapType = KvHashTable <KeyType, KeyOfValue>;
     BaseCommandHandler ()
     {
         bindAllCommand();
@@ -45,12 +102,12 @@ protected:
     // ex: lpush 不能操作 set 的key
     inline bool checkKeyType (
         const CommandParams &commandParams,
+        const KeyMapType::Iterator &it,
         StructType structType,
         ResValueType &res
     )
     {
-        auto it = keyOfStructType.find(commandParams.key);
-        if (it != keyOfStructType.end() && it->second != structType)
+        if (it != keyMap.end() && it->second.structType != structType)
         {
             res.setErrorStr(commandParams, ResValueType::ErrorType::WRONGTYPE);
             return false;
@@ -73,38 +130,55 @@ protected:
         BIND_BASE_COMMANDS("type", &BaseCommandHandler::handlerType);
         BIND_BASE_COMMANDS("auth", &BaseCommandHandler::handlerAuth);
 
-        BIND_STRING_COMMANDS("set",
-            static_cast<void (StringCommandHandler::*) (ParamsType &)>(&StringCommandHandler::handlerSet));
-        BIND_STRING_COMMANDS("get", &StringCommandHandler::handlerGet);
-        BIND_STRING_COMMANDS("incr", &StringCommandHandler::handlerIncr);
-        BIND_STRING_COMMANDS("incrby", &StringCommandHandler::handlerIncrBy);
-        BIND_STRING_COMMANDS("incrbyfloat", &StringCommandHandler::handlerIncrByFloat);
-        BIND_STRING_COMMANDS("decr", &StringCommandHandler::handlerDecr);
-        BIND_STRING_COMMANDS("decrby", &StringCommandHandler::handlerDecrBy);
-        BIND_STRING_COMMANDS("append", &StringCommandHandler::handlerAppend);
-        BIND_STRING_COMMANDS("mset", &StringCommandHandler::handlerMSet);
+        BIND_STRING_COMMANDS("set", &StringCommandHandler::handlerSet, nullptr, true);
+        BIND_STRING_COMMANDS("get",
+                             &StringCommandHandler::handlerGet,
+                             &ResValueType::setNilFlag,
+                             false);
+        BIND_STRING_COMMANDS("incr", &StringCommandHandler::handlerIncr, nullptr, true);
+        BIND_STRING_COMMANDS("incrby", &StringCommandHandler::handlerIncrBy, nullptr, true);
+        BIND_STRING_COMMANDS("incrbyfloat",
+                             &StringCommandHandler::handlerIncrByFloat,
+                             nullptr,
+                             true);
+        BIND_STRING_COMMANDS("decr", &StringCommandHandler::handlerDecr, nullptr, true);
+        BIND_STRING_COMMANDS("decrby", &StringCommandHandler::handlerDecrBy, nullptr, true);
+        BIND_STRING_COMMANDS("append", &StringCommandHandler::handlerAppend, nullptr, true);
+        BIND_STRING_COMMANDS("mset", &StringCommandHandler::handlerMSet, nullptr, true);
 
-        BIND_HASH_COMMANDS("hset", &HashCommandHandler::handlerHSet);
-        BIND_HASH_COMMANDS("hget", &HashCommandHandler::handlerHGet);
-        BIND_HASH_COMMANDS("hgetall", &HashCommandHandler::handlerHGetAll);
-        BIND_HASH_COMMANDS("hexists", &HashCommandHandler::handlerHExists);
-        BIND_HASH_COMMANDS("hincrby", &HashCommandHandler::handlerHIncrBy);
-        BIND_HASH_COMMANDS("hincrbyfloat", &HashCommandHandler::handlerHIncrByFloat);
-        BIND_HASH_COMMANDS("hlen", &HashCommandHandler::handlerHLen);
-        BIND_HASH_COMMANDS("hvals", &HashCommandHandler::handlerHVals);
-        BIND_HASH_COMMANDS("hkeys", &HashCommandHandler::handlerHKeys);
-        BIND_HASH_COMMANDS("hsetnx", &HashCommandHandler::handlerHSetNx);
-        BIND_HASH_COMMANDS("hdel", &HashCommandHandler::handlerHDel);
+        BIND_HASH_COMMANDS("hset", &HashCommandHandler::handlerHSet, nullptr, true);
+        BIND_HASH_COMMANDS("hget",
+                           &HashCommandHandler::handlerHGet,
+                           &ResValueType::setNilFlag,
+                           false);
+        BIND_HASH_COMMANDS("hgetall", &HashCommandHandler::handlerHGetAll, nullptr, false);
+        BIND_HASH_COMMANDS("hexists",
+                           &HashCommandHandler::handlerHExists,
+                           &ResValueType::setEmptyIntegerValue,
+                           false);
+        BIND_HASH_COMMANDS("hincrby", &HashCommandHandler::handlerHIncrBy, nullptr, true);
+        BIND_HASH_COMMANDS("hincrbyfloat", &HashCommandHandler::handlerHIncrByFloat, nullptr, true);
+        BIND_HASH_COMMANDS("hlen",
+                           &HashCommandHandler::handlerHLen,
+                           &ResValueType::setEmptyIntegerValue,
+                           false);
+        BIND_HASH_COMMANDS("hvals",
+                           &HashCommandHandler::handlerHVals,
+                           &ResValueType::setEmptyVectorValue,
+                           false);
+        BIND_HASH_COMMANDS("hkeys",
+                           &HashCommandHandler::handlerHKeys,
+                           &ResValueType::setEmptyVectorValue,
+                           false);
+        BIND_HASH_COMMANDS("hsetnx", &HashCommandHandler::handlerHSetNx, nullptr, true);
+        BIND_HASH_COMMANDS("hdel",
+                           &HashCommandHandler::handlerHDel,
+                           &ResValueType::setEmptyIntegerValue,
+                           false);
     }
 
-    AllKeyMapType keyOfStructType;
-    ExpireMapType expireKey;
-    StringCommandHandler stringCommandHandler;
-    HashCommandHandler hashCommandHandler;
-
-    HashTable <KeyType,
-               std::pair <StructType, std::function <void (ParamsType &)>>>
-        allCommands;
+    HashTable <KeyType, AllCommandsSecond> allCommands;
+    KeyMapType keyMap {};
 };
 class CommandHandler final : public BaseCommandHandler
 {
@@ -129,19 +203,31 @@ public:
             res.setErrorStr(commandParams, ResValueType::ErrorType::UNKNOWN_COMMAND);
             return;
         }
-        if (pa->second.first != StructType::NIL)
-            checkExpireKey(commandParams.key);
-        // key 类型不同不让操作
-        if (!checkKeyType(commandParams, pa->second.first, res))
-            return;
         // 在设置了密码的情况下，没有使用auth命令登录，不让操作
         if (commandParams.command != "auth"
             && !checkAuth(commandParams, params.needAuth, params.auth, res))
             return;
 
-        pa->second.second(params);
+        if (pa->second.structType != StructType::BASE)
+        {
+            // 如果不是base类型的命令操作，必须有key
+            if (!checkKeyIsValid(params.commandParams, params.resValue))
+                return;
+            auto it = keyMap.find(params.commandParams.key);
+            if (!checkKeyType(params.commandParams, it, pa->second.structType, res))
+                return;
+
+            checkExpireKey(it);
+            // 处理前置钩子函数
+            if (!it->second.handler->handlerBefore(params))
+                return;
+            (it->second.handler->*(pa->second.handler))(params);
+            return;
+        }
+        this->handlerBefore(params);
+        (this->*(pa->second.handler))(params);
     }
-    static CommandParams splitCommandParams (const ResValueType &recvValue)
+    static CommandParams splitCommandParams (ResValueType &recvValue)
     {
         CommandParams commandParams;
         commandParams.command = recvValue.elements[0].value;
@@ -155,29 +241,29 @@ public:
                 commandParams.params.emplace_back(recvValue.elements[i].value);
         }
 
+        recvValue.elements.clear();
         return commandParams;
     }
 
     void checkExpireKeys ()
     {
-        if (expireKey.empty())
+        if (keyMap.empty())
             return;
 
-        auto it = expireKey.begin();
-        auto end = expireKey.end();
-        ExpireMapType::iterator resIt;
+        auto end = keyMap.end();
         int i = 0;
         auto now = getNow();
 
-        while (i++ < onceCheckExpireKeyMaxNum && (getNow() - now) < onceCheckExpireKeyMaxTime
-            && it != end)
+        while (i++ < onceCheckExpireKeyMaxNum && (getNow() - now) < onceCheckExpireKeyMaxTime)
         {
-            resIt = checkExpireKey(it);
-            if (resIt != end)
-                it = resIt;
-            else
-                ++it;
+            auto it = keyMap.getRandomItem();
+            if (it != end)
+                checkExpireKey(it);
         }
+    }
+    bool handlerBefore (ParamsType &params) override
+    {
+        return true;
     }
 protected:
     void handlerFlushAll (ParamsType &params) override
@@ -193,7 +279,7 @@ protected:
     }
     void handlerDel (ParamsType &params) override
     {
-        size_t num = delKey(params.commandParams.key);
+        size_t num = keyMap.erase(params.commandParams.key);
         params.resValue.setIntegerValue(static_cast<IntegerType>(num));
     }
     // 秒
@@ -222,11 +308,11 @@ protected:
         if (!checkKeyIsValid(params.commandParams, params.resValue))
             return;
 
-        auto it = expireKey.find(params.commandParams.key);
-        if (it == expireKey.end())
+        auto it = keyMap.find(params.commandParams.key);
+        if (it == keyMap.end())
             params.resValue.setIntegerValue(nilExpire);
         else
-            params.resValue.setIntegerValue((it->second.second - getNow()).count() / 1000);
+            params.resValue.setIntegerValue((it->second.expire - getNow()).count() / 1000);
     }
     // 毫秒
     void handlerPTTL (ParamsType &params) override
@@ -234,11 +320,11 @@ protected:
         if (!checkKeyIsValid(params.commandParams, params.resValue))
             return;
 
-        auto it = expireKey.find(params.commandParams.key);
-        if (it == expireKey.end())
+        auto it = keyMap.find(params.commandParams.key);
+        if (it == keyMap.end())
             params.resValue.setIntegerValue(nilExpire);
         else
-            params.resValue.setIntegerValue((it->second.second - getNow()).count());
+            params.resValue.setIntegerValue((it->second.expire - getNow()).count());
     }
 
     void handlerKeys (ParamsType &params) override
@@ -248,7 +334,7 @@ protected:
             return;
 
         if (params.commandParams.key == "*")
-            for (auto &v : keyOfStructType)
+            for (auto &v : keyMap)
                 params.resValue.setVectorValue(v.first);
     }
     void handlerFlushDb (ParamsType &params) override
@@ -264,11 +350,11 @@ protected:
         KeyType key = params.commandParams.key;
         size_t i = 0;
         IntegerType count = 0;
-        AllKeyMapType::iterator it;
-        auto end = keyOfStructType.end();
+        KeyMapType::iterator it;
+        auto end = keyMap.end();
         do
         {
-            it = keyOfStructType.find(key);
+            it = keyMap.find(key);
             if (it != end)
                 count++;
 
@@ -283,10 +369,10 @@ protected:
             || !checkHasParams(params.commandParams, params.resValue, 0))
             return;
 
-        auto it = keyOfStructType.find(params.commandParams.key);
-        if (it != keyOfStructType.end())
+        auto it = keyMap.find(params.commandParams.key);
+        if (it != keyMap.end())
         {
-            switch (it->second)
+            switch (it->second.structType)
             {
                 case StructType::STRING:
                     params.resValue.setStringValue("string");
@@ -303,6 +389,7 @@ protected:
                 case StructType::ZSET:
                     params.resValue.setStringValue("zset");
                     return;
+                case StructType::BASE:
                 case StructType::END:
                 case StructType::NIL:
                     break;
@@ -337,15 +424,9 @@ protected:
     }
 
 private:
-    inline void clear () noexcept override
+    inline void clear () noexcept
     {
-        expireKey.clear();
-        keyOfStructType.clear();
-        stringCommandHandler.clear();
-    }
-    inline size_t delKey (const std::string &key) noexcept override
-    {
-        return delKeyEvent(key);
+        keyMap.clear();
     }
 
     inline bool expireCommandCheck (
@@ -355,13 +436,13 @@ private:
         StructType &structType
     )
     {
-        auto it = keyOfStructType.find(commandParams.key);
-        if (it == keyOfStructType.end())
+        auto it = keyMap.find(commandParams.key);
+        if (it == keyMap.end())
         {
             resValue.setIntegerValue(0);
             return false;
         }
-        structType = it->second;
+        structType = it->second.structType;
         return checkKeyIsValid(commandParams, resValue)
             && checkHasParams(commandParams, resValue, 1)
             && checkValueIsLongLong(commandParams, resValue, &expire);
@@ -370,26 +451,8 @@ private:
     void registerEvents ()
     {
         eventObserver.on(
-            ENUM_TO_INT(EventType::ADD_KEY),
-            std::bind(&CommandHandler::addKeyEvent, this, std::placeholders::_1));
-        eventObserver.on(
             ENUM_TO_INT(EventType::RESET_EXPIRE),
             std::bind(&CommandHandler::resetExpire, this, std::placeholders::_1));
-        eventObserver.on(
-            ENUM_TO_INT(EventType::DEL_KEY),
-            std::bind(
-                static_cast<void (CommandHandler::*) (void *)>(&CommandHandler::delKeyEvent),
-                this,
-                std::placeholders::_1
-            ));
-    }
-
-    void addKeyEvent (void *arg)
-    {
-        auto eventAddObserverParams = static_cast<EventAddObserverParams *>(arg);
-        keyOfStructType.emplace(eventAddObserverParams->key, eventAddObserverParams->structType);
-
-        resetExpire(arg);
     }
 
     void resetExpire (void *arg)
@@ -403,114 +466,31 @@ private:
         );
     }
 
-    void delKeyEvent (void *arg)
-    {
-        auto eventAddObserverParams = static_cast<EventAddObserverParams *>(arg);
-
-        delKeyEvent(eventAddObserverParams->key);
-    }
-
     void setExpire (
         const std::string &key,
         const StructType structType,
         const std::chrono::milliseconds expire
     )
     {
-        if (expire > std::chrono::milliseconds(0))
-        {
-            auto it = expireKey.emplace(key, std::make_pair(structType, expire + getNow()));
-            if (!it.second)
-                it.first->second.second = expire + getNow();
-        }
+        auto it = keyMap.find(key);
+        if (it != keyMap.end())
+            it->second.expire = expire + getNow();
     }
 
-    size_t delKeyEvent (const std::string &key)
+    KeyMapType::iterator delKeyEvent (KeyMapType::iterator &it)
     {
-        auto it = expireKey.find(key);
-        // 没有过期key
-        if (it == expireKey.end())
-        {
-            auto keyIt = keyOfStructType.find(key);
-            return delKeyEvent(keyIt);
-        }
-            // 有过期的key
-        else
-        {
-            if (delKeyEvent(it) == expireKey.end())
-                return 0;
-        }
-
-        return 1;
+        return keyMap.erase(it);;
     }
 
-    size_t delKeyEvent (AllKeyMapType::iterator &it)
+    KeyMapType::iterator checkExpireKey (KeyMapType::iterator &it)
     {
-        if (it == keyOfStructType.end())
-            return 0;
-
-        keyOfStructType.erase(it);
-        switchDelCommon(it->first, it->second);
-
-        return 1;
-    }
-
-    ExpireMapType::iterator delKeyEvent (ExpireMapType::iterator &it)
-    {
-        size_t num = keyOfStructType.erase(it->first);
-        ExpireMapType::iterator resIt;
-        // 如果num为0则key不存在
-        if (num)
+        if (it != keyMap.end())
         {
-            const StructType structType = it->second.first;
-            resIt = expireKey.erase(it);
-
-            switchDelCommon(it->first, structType);
-        }
-
-        return resIt;
-    }
-
-    void switchDelCommon (const std::string &key, StructType structType)
-    {
-        switch (structType)
-        {
-            case StructType::STRING:
-                stringCommandHandler.delKey(key);
-                break;
-            case StructType::LIST:
-                break;
-            case StructType::HASH:
-                hashCommandHandler.delKey(key);
-                break;
-            case StructType::SET:
-                break;
-            case StructType::ZSET:
-                break;
-            case StructType::NIL:
-                break;
-            case StructType::END:
-                break;
-        }
-    }
-
-    StructType checkExpireKey (const std::string &key)
-    {
-        auto it = expireKey.find(key);
-        if (checkExpireKey(it) != expireKey.end())
-            return it->second.first;
-
-        return StructType::NIL;
-    }
-
-    ExpireMapType::iterator checkExpireKey (ExpireMapType::iterator &it)
-    {
-        if (it != expireKey.end())
-        {
-            if (getNow() > it->second.second)
+            if (it->second.expire.count() >= 0 && getNow() > it->second.expire)
                 return delKeyEvent(it);
         }
 
-        return expireKey.end();
+        return keyMap.end();
     }
 
     static inline bool checkAuth (

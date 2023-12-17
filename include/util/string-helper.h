@@ -28,7 +28,7 @@ namespace Utils
             {
                 if (str.empty())
                     return false;
-                if (str.size() > (std::numeric_limits<T>::digits10 + 1))
+                if (str.size() > (std::numeric_limits <T>::digits10 + 1))
                     return false;
                 size_t endPtr;
                 try
@@ -45,12 +45,16 @@ namespace Utils
                 }
                 catch (const std::invalid_argument &e)
                 {
-                    PRINT_ERROR("%s", e.what());
+                    // PRINT_ERROR("%s", e.what());
                     return false;
                 }
                 catch (const std::out_of_range &e)
                 {
-                    PRINT_ERROR("%s", e.what());
+                    // PRINT_ERROR("%s", e.what());
+                    return false;
+                }
+                catch (...)
+                {
                     return false;
                 }
             }

@@ -6,9 +6,12 @@
 #define LINUX_SERVER_LIB_INCLUDE_KV_STORE_KV_STORE_H_
 #include "global-config.h"
 #include "config/kv-env.h"
+#include "util/global.h"
 
 #include "data-structure/kv-incrementally-hash.h"
 #include <vector>
+#include <numeric>
+
 template <class _Key, class _Val>
 using KvHashTable = IncrementallyHashTable <_Key, _Val>;
 
@@ -20,6 +23,11 @@ using ValueType = StringType;
 
 template <class T>
 using ArrayType = std::vector <T>;
+
+#include "config/kv-config.h"
+#include "data-structure/kv-quick-list.h"
+
+using KvListPack = KvListPack;
 
 #include "config/kv-config.h"
 #include "config/kv-server-config.h"
@@ -36,7 +44,8 @@ struct SockEpollPtr
         STATUS_RECV_BAD,
         STATUS_SEND,
         STATUS_SEND_DOWN,
-        STATUS_SEND_BAD
+        STATUS_SEND_BAD,
+        STATUS_CLOSE
     };
     explicit SockEpollPtr (int fd)
         : fd(fd), isListenFd(true), sockaddr(sockaddr_in())
@@ -64,7 +73,7 @@ struct SockEpollPtr
     ResValueType resValue {};
     CommandParams commandParams {};
     bool auth {};
-    bool needAuth;
+    bool needAuth {};
     StringType username = DEFAULT_USER_NAME;
     QUEUE_STATUS status = STATUS_LISTEN;
 

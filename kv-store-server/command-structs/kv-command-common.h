@@ -6,26 +6,15 @@
 #define LINUX_SERVER_LIB_KV_STORE_COMMAND_STRUCTS_KV_COMMAND_COMMON_H_
 
 #define ENUM_TO_INT(Command) static_cast<int>(Command)
-#define FIND_COMMAND                                                        \
-        static inline Commands findCommand (const std::string &command)     \
-        {                                                                   \
-            int cmd = ENUM_TO_INT(Commands::NIL) + 1;                       \
-            for (; cmd != ENUM_TO_INT(Commands::END); ++cmd)                \
-            {                                                               \
-                if (std::strcmp(command.c_str(), commands[cmd]) == 0)       \
-                break;                                                      \
-            }                                                               \
-                                                                            \
-            return Commands(cmd);                                           \
-        }
-
 #define EVENT_OBSERVER_EMIT(Command) eventObserver.emit(static_cast<int>(Command), &eventAddObserverParams);
 
 class CommandCommon
 {
 public:
-    inline virtual void clear () noexcept = 0;
-    inline virtual size_t delKey (const std::string &) noexcept = 0;
+    // 调用handler的 前置钩子
+    // return false 为不调用handler 直接返回 需填充res
+    inline virtual bool handlerBefore (ParamsType &params) = 0;
+    virtual ~CommandCommon() = default;
 protected:
     /*
      * 检查参数
@@ -113,14 +102,6 @@ protected:
         }
 
         return true;
-    }
-
-    static void setNewKeyValue (const std::string &key, const StructType structType)
-    {
-        eventAddObserverParams.structType = structType;
-        eventAddObserverParams.key = key;
-
-        EVENT_OBSERVER_EMIT(EventType::ADD_KEY);
     }
 
     static void delKeyValue (const std::string &key)

@@ -14,7 +14,7 @@
 #define BOOL_YES "yes"
 #define BOOL_NO "no"
 
-#define ENUM_SET_NIL -1
+#define ENUM_SET_NIL (-1)
 
 #define GET_ENUM_UINT64(v) static_cast<uint64_t>(v)
 #define GET_ENUM_INT(v) static_cast<int>(v)
@@ -62,24 +62,29 @@ enum class ListMaxListPackSizeType
 struct ListMaxListPackSize
 {
     ListMaxListPackSizeType type;
-    uint16_t number;
+    uint32_t number;
 };
+// 注释详见kv-store.conf配置
 struct KvConfigFields // NOLINT
 {
-    StringType bind[BIND_MAX + 1];
-    uint32_t port;
-    bool ioThreadsDoReads;
-    uint32_t ioThreads;
-    bool daemonize;
-    StringType pidFile;
-    // 日志路径
-    StringType logFile;
-    int logLevel;
-    uint32_t databases;
-    uint32_t timeout;
-    bool protectedMode;
-    StringType requirePass;
-    ListMaxListPackSize listMaxListPackSize;
+    StringType bind[BIND_MAX + 1]; // 绑定ip
+    uint32_t port; // 端口
+    bool ioThreadsDoReads; // 是否开启多线程处理网络io
+    uint32_t ioThreads; // 开启的线程数
+    bool daemonize; // 是否为守护进程模式启动
+    StringType pidFile; // pid文件路径
+    StringType logFile; // 日志路径
+    int logLevel; // 日志等级
+    uint32_t databases; // 数据库数量，目前只支持了一个
+    uint32_t timeout; // tcp连接闲置N秒后关闭，0为不开启
+    bool protectedMode; // 是否开启保护模式
+    StringType requirePass; // 密码
+
+    ListMaxListPackSize listMaxListPackSize; // list命令 ziplist超出当前阈值，创建quicklist（暂未支持）
+    uint32_t listCompressDepth;
+
+    uint64_t hashMaxListPackEntries; // hash命令 允许的最大条目数
+    uint64_t hashMaxListPackValue; // hash命令 允许单个条目数的最大占用字节数
 };
 
 namespace __KV_PRIVATE__
@@ -213,7 +218,7 @@ namespace __KV_PRIVATE__
         {
             return !(name == n);
         } // NOLINT
-        StringType name;
+        StringType name{};
         int val = ENUM_SET_NIL;
     };
 
@@ -1060,6 +1065,30 @@ private:
             -2,
             &config.listMaxListPackSize.number,
             -5,
+            std::numeric_limits <uint16_t>::max());
+
+        CREATE_NUMERIC_CONFIG(listCompressDepth,
+            __KV_PRIVATE__::ConfigFlag::MODIFIABLE_CONFIG,
+            __KV_PRIVATE__::NumericType::NUMERIC_TYPE_UINT,
+            0,
+            &config.listCompressDepth,
+            0,
+            std::numeric_limits <uint32_t>::max());
+
+        CREATE_NUMERIC_CONFIG(hashMaxListPackEntries,
+            __KV_PRIVATE__::ConfigFlag::MODIFIABLE_CONFIG,
+            __KV_PRIVATE__::NumericType::NUMERIC_TYPE_ULONG,
+            512,
+            &config.hashMaxListPackEntries,
+            0,
+            std::numeric_limits <uint64_t>::max());
+
+        CREATE_NUMERIC_CONFIG(hashMaxListPackValue,
+            __KV_PRIVATE__::ConfigFlag::MODIFIABLE_CONFIG,
+            __KV_PRIVATE__::NumericType::NUMERIC_TYPE_UINT,
+            64,
+            &config.hashMaxListPackValue,
+            0,
             std::numeric_limits <uint16_t>::max());
     }
 

@@ -26,9 +26,18 @@
 
 #define DEFAULT_USER_NAME "default"
 
-enum class StructType { NIL = -1, STRING, LIST, HASH, SET, ZSET, END };
+enum class StructType { NIL = -1, BASE, STRING, LIST, HASH, SET, ZSET, END };
 enum EventType { ADD_KEY, RESET_EXPIRE, DEL_KEY };
 using EventsObserverType = EventsObserver <int>;
+
+enum class DataStructureType
+{
+    HASH_TABLE,
+    SKIP_LIST,
+    LIST_PACK,
+    QUICK_LIST,
+    STREAM
+};
 
 struct CommandParams
 {
@@ -98,6 +107,8 @@ struct ResValueType : Utils::AllDefaultCopy
 
     enum class ErrorType
     {
+        // 协议错误,
+        PROTO_ERROR,
         // 设置一个类型不相同的key报错   比如 lset key  后  get key
         WRONGTYPE,
         // 未定义的 命令报错
@@ -242,6 +253,9 @@ struct ResValueType : Utils::AllDefaultCopy
                 value =
                     "ERR AUTH <password> called without any password configured for the default user. Are you sure your configuration is correct?";
                 break;
+            case ErrorType::PROTO_ERROR:
+                value = "ERR PROTO.";
+                break;
         }
     }
 
@@ -332,6 +346,11 @@ struct ResValueType : Utils::AllDefaultCopy
         model = ReplyModel::REPLY_ARRAY;
     }
 
+    inline void setEmptyIntegerValue ()
+    {
+        setIntegerValue(0);
+    }
+
     inline void clear () noexcept
     {
         value.clear();
@@ -372,7 +391,7 @@ private:
             case ResValueType::ReplyModel::REPLY_STATUS:
             case ResValueType::ReplyModel::REPLY_NIL:
             case ResValueType::ReplyModel::REPLY_STRING:
-                resMessage = value;
+                resMessage = "\"" + value + "\"";
                 break;
             case ResValueType::ReplyModel::REPLY_ARRAY:
                 if (elements.empty())
@@ -382,7 +401,8 @@ private:
                 }
                 for (auto &v : elements)
                     stringFormatter << ++idx << ") \""
-                                    << v.formatResValueRecursive(stringFormatter) << std::endl;
+                                    << v.formatResValueRecursive(stringFormatter)
+                                    << "\"" << std::endl;
                 resMessage = stringFormatter.str();
                 break;
         }

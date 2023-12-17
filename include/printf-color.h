@@ -38,8 +38,20 @@
 #define STD
 #endif
 
+#define KV_ASSERT(expr) \
+    do {                \
+        if (unlikely(!(expr))) { \
+            PRINT_ERROR("=== ASSERTION FAILED ==="); \
+            PRINT_ERROR(#expr " is not true"); \
+        }\
+    } while(0)
+
+#if defined(KV_STORE_TEST)
 #define PRINT_DEBUG(str, ...) Logger::printInfo(Logger::Level::DEBUG, UNDERLINE "%s [%s:%d]" NONE "\t" str "\n", \
                                 __FILE__, __FUNCTION__, __LINE__, ##__VA_ARGS__)
+#else
+#define PRINT_DEBUG(str, ...)
+#endif
 
 #define PRINT_INFO(str, ...) Logger::printInfo(Logger::Level::NOTICE, UNDERLINE "%s [%s:%d]" NONE "\t" str "\n", \
                                 __FILE__, __FUNCTION__, __LINE__, ##__VA_ARGS__)

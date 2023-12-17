@@ -8,7 +8,6 @@
 #include "kv-reactor.h"
 #include <sys/socket.h>
 #include <arpa/inet.h>
-#include "util/global.h"
 
 class Tcp
 {

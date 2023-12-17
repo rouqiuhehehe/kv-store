@@ -7,7 +7,6 @@
 #ifndef LINUX_SERVER_LIB_INCLUDE_GLOBAL_H_
 #define LINUX_SERVER_LIB_INCLUDE_GLOBAL_H_
 
-#include "printf-color.h"
 #if defined __GNUC__
 #define likely(x) __builtin_expect ((x), 1)
 #define unlikely(x) __builtin_expect ((x), 0)
@@ -15,6 +14,15 @@
 #define likely(x) (x)
 #define unlikely(x) (x)
 #endif
+
+#if __GNUC__ >= 5 || (__GNUC__ == 4 && __GNUC_MINOR__ >= 5)
+// 特定的代码路径是不可达的，即永远不会执行到的代码。当编译器遇到 __builtin_unreachable 函数时，会认为该函数调用之后的代码是不可达的，并进行相应的优化。
+#define unreachable __builtin_unreachable
+#else
+#define unreachable
+#endif
+
+#include "printf-color.h"
 
 #ifdef __cplusplus
 #include <cerrno>

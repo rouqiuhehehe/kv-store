@@ -20,7 +20,7 @@
 
 /*
  * set key 123
- * "*3\r\n$3\r\nset\r\n$3\r\nkey\r\n$3\r\n123"
+ * "*3\r\n$3\r\nset\r\n$3\r\nkey\r\n$3\r\n123\r\n"
  *
  * 单行字符串（Simple Strings）： 响应的首字节是 "+"
 错误（Errors）： 响应的首字节是 "-"

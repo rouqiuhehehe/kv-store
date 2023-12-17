@@ -269,6 +269,7 @@ public:
                 case SockEpollPtr::STATUS_RECV_BAD:
                 case SockEpollPtr::STATUS_LISTEN:
                 case SockEpollPtr::STATUS_SEND_BAD:
+                case SockEpollPtr::STATUS_CLOSE:
                     break;
             }
     }
@@ -336,12 +337,17 @@ private:
     {
         KvProtocol recvProtocol(fnParams.fd);
 
-        ResValueType recvValue;
-        ssize_t ret = recvProtocol.decodeRecv(recvValue);
+        ssize_t ret = recvProtocol.decodeRecv(fnParams.resValue);
         // 不做处理  留给mainReactor去处理
         if (ret < 0)
         {
-            PRINT_ERROR("recv error : %s", std::strerror(errno));
+            if (ret == -EPROTO)
+            {
+                PRINT_ERROR("protocol error : %s", std::strerror(-ret));
+                fnParams.resValue
+                        .setErrorStr(fnParams.commandParams, ResValueType::ErrorType::PROTO_ERROR);
+            }
+
             fnParams.status = SockEpollPtr::STATUS_RECV_BAD;
         }
         else if (ret == 0)
@@ -354,7 +360,7 @@ private:
         else
         {
             // 命令解析
-            fnParams.commandParams = CommandHandler::splitCommandParams(recvValue);
+            fnParams.commandParams = CommandHandler::splitCommandParams(fnParams.resValue);
             fnParams.status = SockEpollPtr::STATUS_RECV_DOWN;
 
             PRINT_INFO("get client command : %s,  addr : %s, sockfd : %d, thread : %lu",
@@ -527,7 +533,13 @@ private:
         }
 
         // 检查配置protectedMode
-        checkProtectedMode();
+        if (!checkProtectedMode())
+        {
+            PRINT_ERROR("accept invalid in protected mode, invalid ip : %s",
+                inet_ntoa(clientAddr.sin_addr));
+            ::close(fd);
+            return;
+        }
         // int bufferSize = MESSAGE_SIZE_MAX;
         // socklen_t bufferSizeLen = sizeof(bufferSize);
         // setsockopt(fd, SOL_SOCKET, SO_RCVBUF, &bufferSize, bufferSizeLen);
@@ -587,6 +599,7 @@ private:
             if (&reactor != this)
             {
                 nextIt = std::next(it);
+                // 移动队列iterator至另一个队列
                 reactor.sockfdQueue().splice(reactor.sockfdQueue().end(), sockfdQueue(), it);
                 it = nextIt;
             }
@@ -606,8 +619,11 @@ private:
     {
         for (SockEpollPtr *sockEpollPtr : sockfdQueue())
         {
-            commandHandler.handlerCommand(*sockEpollPtr);
-            epollModEvent(*sockEpollPtr, SET_COMMON_EPOLL_FLAG(EPOLLOUT));
+            if (sockEpollPtr->status == SockEpollPtr::QUEUE_STATUS::STATUS_RECV_DOWN)
+                commandHandler.handlerCommand(*sockEpollPtr);
+
+            if (sockEpollPtr->status != SockEpollPtr::QUEUE_STATUS::STATUS_CLOSE)
+                epollModEvent(*sockEpollPtr, SET_COMMON_EPOLL_FLAG(EPOLLOUT));
         }
 
         sockfdQueue().clear();

@@ -7,6 +7,7 @@
 
 #include "kv-hash-table.h"
 #include "printf-color.h"
+#include "util/random.h"
 
 template <class _Key, class _Val, typename _Hash = std::hash <_Key>,
     typename _Pred = std::equal_to <_Key>,
@@ -44,6 +45,13 @@ public:
     {
         // 先进行一次扩容，HashTable实现默认是不进行第一次扩容的
         h1.reHash(h1.needRehash(11).second);
+
+        initPrivate();
+    }
+    explicit IncrementallyHashTable (size_t size)
+    {
+        // 先进行一次扩容，HashTable实现默认是不进行第一次扩容的
+        h1.reHash(h1.needRehash(size).second);
 
         initPrivate();
     }
@@ -118,6 +126,22 @@ public:
 
         rhs.initPrivate();
         return *this;
+    }
+
+    Iterator getRandomItem ()
+    {
+        if (empty()) return end();
+        auto idx = Utils::Random::getRandomNum(0, size() - 1);
+        auto &hashTable = status == ReHashStatus::DEFAULT ? h1 : h2;
+
+        size_t curIdx = 0;
+        auto node = hashTable._begin.next;
+        while (++curIdx < idx)
+        {
+            node = node->next;
+        }
+
+        return Iterator(static_cast<typename _HashTable::NodePtr>(node));
     }
 
     template <class ...Arg>

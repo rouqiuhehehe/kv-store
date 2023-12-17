@@ -9,13 +9,9 @@ class StringCommandHandler : public CommandCommon
 {
     friend class BaseCommandHandler;
 public:
-    inline void clear () noexcept override
+    bool handlerBefore (ParamsType &params) override
     {
-        keyValues.clear();
-    }
-    inline size_t delKey (const std::string &key) noexcept override
-    {
-        return keyValues.erase(key);
+        return true;
     }
 private:
     void handlerSet (ParamsType &params)
@@ -29,11 +25,10 @@ private:
         if (!success)
             return;
 
-        auto it = keyValues.find(params.commandParams.key);
-        if (it == keyValues.end())
+        if (!this)
             params.resValue.setNilFlag();
         else
-            params.resValue.setStringValue(it->second);
+            params.resValue.setStringValue(keyValues);
     }
 
     void handlerIncr (ParamsType &params)
@@ -105,7 +100,8 @@ private:
         // 因为第一个key被截出来了，所以commandParams.params.size()必须是奇数才是正确的
         if ((params.commandParams.params.size() & 1) == 0)
         {
-            params.resValue.setErrorStr(params.commandParams, ResValueType::ErrorType::WRONG_NUMBER);
+            params.resValue
+                  .setErrorStr(params.commandParams, ResValueType::ErrorType::WRONG_NUMBER);
             return;
         }
         CommandParams loopParams;
@@ -135,7 +131,8 @@ private:
         FloatType doubleValue;
         if (!Utils::StringHelper::stringIsDouble(params.commandParams.params[0], &doubleValue))
         {
-            params.resValue.setErrorStr(params.commandParams, ResValueType::ErrorType::VALUE_NOT_FLOAT);
+            params.resValue
+                  .setErrorStr(params.commandParams, ResValueType::ErrorType::VALUE_NOT_FLOAT);
             return;
         }
 
@@ -151,7 +148,8 @@ private:
         {
             FloatType oldValue;
             if (!Utils::StringHelper::stringIsDouble(it->second, &oldValue))
-                params.resValue.setErrorStr(params.commandParams, ResValueType::ErrorType::VALUE_NOT_FLOAT);
+                params.resValue
+                      .setErrorStr(params.commandParams, ResValueType::ErrorType::VALUE_NOT_FLOAT);
             else
             {
                 if (Utils::MathHelper::doubleCalculateWhetherOverflow <std::plus <FloatType>>(
@@ -173,53 +171,48 @@ private:
     }
 
 private:
-     void handlerSet (const CommandParams &commandParams, ResValueType &resValue) {
-         // 检查参数长度 是否缺少参数
-         bool success = checkHasParams(commandParams, resValue, -1);
-         if (!success)
-             return;
-
-         // 检查拓展参数 NX|XX EX|PX GET
-         success = handlerExtraParams(commandParams, resValue);
-         if (!success)
-             return;
-
-         // 填充value
-         value.value = commandParams.params[0];
-         resValue.setOKFlag();
-         auto it = keyValues.find(commandParams.key);
-         if (it == keyValues.end())
-         {
-             if (value.setModel == StringValueType::SetModel::NX)
-             {
-                 resValue.setNilFlag();
-                 return;
-             }
-             if (value.isReturnOldValue)
-                 resValue.setNilFlag();
-
-             setNewKeyValue(commandParams.key);
-             return;
-         }
-
-         if (value.setModel == StringValueType::SetModel::XX)
-         {resValue.setNilFlag();
-             return;
-         }
-         if (value.isReturnOldValue)
-             resValue.setStringValue(it->second);
-
-         if (eventAddObserverParams.expire != std::chrono::milliseconds(0))
-             EVENT_OBSERVER_EMIT(EventType::RESET_EXPIRE);
-
-         it->second = value.value;
-    }
-    // 设置key ，如果有过期时间需要提前设置
-    void setNewKeyValue (const std::string &key)
+    void handlerSet (const CommandParams &commandParams, ResValueType &resValue)
     {
-        CommandCommon::setNewKeyValue(key, StructType::STRING);
+        // 检查参数长度 是否缺少参数
+        bool success = checkHasParams(commandParams, resValue, -1);
+        if (!success)
+            return;
 
-        keyValues.emplace(key, value.value);
+        // 检查拓展参数 NX|XX EX|PX GET
+        success = handlerExtraParams(commandParams, resValue);
+        if (!success)
+            return;
+
+        // 填充value
+        value.value = commandParams.params[0];
+        resValue.setOKFlag();
+        auto it = keyValues.find(commandParams.key);
+        if (it == keyValues.end())
+        {
+            if (value.setModel == StringValueType::SetModel::NX)
+            {
+                resValue.setNilFlag();
+                return;
+            }
+            if (value.isReturnOldValue)
+                resValue.setNilFlag();
+
+            setNewKeyValue(commandParams.key);
+            return;
+        }
+
+        if (value.setModel == StringValueType::SetModel::XX)
+        {
+            resValue.setNilFlag();
+            return;
+        }
+        if (value.isReturnOldValue)
+            resValue.setStringValue(it->second);
+
+        if (eventAddObserverParams.expire != std::chrono::milliseconds(0))
+            EVENT_OBSERVER_EMIT(EventType::RESET_EXPIRE);
+
+        it->second = value.value;
     }
 
     static bool handlerExtraParams (
@@ -344,7 +337,7 @@ private:
         }
     }
 
-    KvHashTable <KeyType, ValueType> keyValues {};
+    ValueType keyValues {};
 
     static StringValueType value;
 };

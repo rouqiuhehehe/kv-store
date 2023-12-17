@@ -7,6 +7,7 @@
 
 #include <fcntl.h>
 #include <sys/socket.h>
+#include <ifaddrs.h>
 
 namespace Utils
 {

@@ -6,16 +6,13 @@
 #define LINUX_SERVER_KV_STORE_SERVER_COMMAND_STRUCTS_KV_LIST_COMMAND_H_
 
 #include "data-structure/kv-ziplist-base.h"
-class ListCommandHandler : public CommandCommon {
+class ListCommandHandler : public CommandCommon
+{
     friend class BaseCommandHandler;
 public:
-    void clear () noexcept override
+    bool handlerBefore (ParamsType &params) override
     {
-
-    }
-    size_t delKey (const std::string &string) noexcept override
-    {
-        return 0;
+        return true;
     }
 
 };

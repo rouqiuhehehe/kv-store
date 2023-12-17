@@ -1,18 +1,26 @@
 cmake_minimum_required(VERSION 3.13)
 project(kv-store)
 set(EXECUTABLE_OUTPUT_PATH ${CMAKE_BINARY_DIR}/bin)
+set(LIBRARY_OUTPUT_PATH ${CMAKE_BINARY_DIR}/lib)
 set(CMAKE_CXX_STANDARD 11)
 set(CMAKE_VERBOSE_MAKEFILE ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 #message(${CMAKE_VERSION})
 add_definitions(-Wno-unknown-pragmas)
+if (CMAKE_BUILD_TYPE STREQUAL "Debug")
+    add_definitions(-DKV_STORE_TEST)
+endif ()
 
 set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -O0 -Wall")
 
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/global.cmake)
 
 include_directories(include)
+include_directories(lib/include)
+link_directories(${CMAKE_BINARY_DIR}/lib)
+
+add_subdirectory(lib)
 
 add_subdirectory(kv-store-server)
 add_subdirectory(kv-store-client)
