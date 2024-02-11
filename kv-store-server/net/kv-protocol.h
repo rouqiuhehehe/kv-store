@@ -5,7 +5,7 @@
 #ifndef LINUX_SERVER_LIB_KV_STORE_NET_KV_PROTOCOL_H_
 #define LINUX_SERVER_LIB_KV_STORE_NET_KV_PROTOCOL_H_
 
-#include <data-structure/kv-value.h>
+#include <config/kv-value.h>
 #define CHECK_PROTO \
         if (*(msg + offset) != '\r' || *(msg + offset + 1) != '\n' || offset > len) \
             return -EPROTO;                                                         \
@@ -47,14 +47,12 @@ public:
         : KvProtocolBase(sockfd) {}
 
 protected:
-    virtual ssize_t decodeRecv (ResValueType &res)
-    {
+    virtual ssize_t decodeRecv (ResValueType &res) {
         ssize_t ret;
         char message[MESSAGE_SIZE_MAX];
 
         ValueType originalMessage;
-        do
-        {
+        do {
             ret = ::recv(sockfd, message, MESSAGE_SIZE_MAX, 0);
             if (ret == -1 && errno == EINTR)
                 continue;
@@ -69,8 +67,7 @@ protected:
             return ret;
 
         if (message[originalMessage.size() - 1] == '\n'
-            && message[originalMessage.size() - 2] == '\r')
-        {
+            && message[originalMessage.size() - 2] == '\r') {
             msg = originalMessage.c_str();
             len = originalMessage.length();
             offset = 0;
@@ -82,10 +79,8 @@ protected:
     }
 
 private:
-    int decodeProto (ResValueType &res)
-    {
-        switch (*(msg + offset++))
-        {
+    int decodeProto (ResValueType &res) {
+        switch (*(msg + offset++)) {
             case '*':
                 return decodeArrayItem(res);
             case '$':
@@ -102,8 +97,7 @@ private:
 
     }
 
-    int decodeArrayItem (ResValueType &res)
-    {
+    int decodeArrayItem (ResValueType &res) {
         IntegerType paramsSize;
         if (!getParamsSize(paramsSize))
             return -EPROTO;
@@ -113,8 +107,7 @@ private:
 
         int readSize = 0;
         int ret;
-        while (readSize < paramsSize)
-        {
+        while (readSize < paramsSize) {
             ret = decodeProto(res.elements[readSize++]);
             if (ret < 0)
                 return ret;
@@ -123,15 +116,13 @@ private:
         return readSize;
     }
 
-    int decodeBulkStringsItem (ResValueType &res)
-    {
+    int decodeBulkStringsItem (ResValueType &res) {
         IntegerType paramsSize;
         if (!getParamsSize(paramsSize))
             return -EPROTO;
 
         res.model = ResValueType::ReplyModel::REPLY_STRING;
-        if (paramsSize == 0)
-        {
+        if (paramsSize == 0) {
             res.value.clear();
             return static_cast<int>(paramsSize);
         }
@@ -145,23 +136,19 @@ private:
         return static_cast<int>(paramsSize);
     }
 
-    int decodeErrorsItem (ResValueType &res)
-    {
+    int decodeErrorsItem (ResValueType &res) {
         return decodeItemCommon(res, ResValueType::ReplyModel::REPLY_ERROR);
     }
 
-    int decodeStringsItem (ResValueType &res)
-    {
-        return decodeItemCommon(res, ResValueType::ReplyModel::REPLY_STRING);
+    int decodeStringsItem (ResValueType &res) {
+        return decodeItemCommon(res, ResValueType::ReplyModel::REPLY_STATUS);
     }
 
-    int decodeIntegerItem (ResValueType &res)
-    {
+    int decodeIntegerItem (ResValueType &res) {
         return decodeItemCommon(res, ResValueType::ReplyModel::REPLY_INTEGER);
     }
 
-    int decodeItemCommon (ResValueType &res, const ResValueType::ReplyModel model)
-    {
+    int decodeItemCommon (ResValueType &res, const ResValueType::ReplyModel model) {
         res.model = model;
         res.value.clear();
         SET_HEAD_M_OFFSET;
@@ -171,8 +158,7 @@ private:
         return mOffset;
     }
 
-    bool getParamsSize (IntegerType &paramsSize)
-    {
+    bool getParamsSize (IntegerType &paramsSize) {
         static std::string buf;
         SET_HEAD_M_OFFSET;
 
@@ -186,11 +172,9 @@ private:
         return success;
     }
 
-    inline int setOffsetUntilEnd (const char *head)
-    {
+    inline int setOffsetUntilEnd (const char *head) {
         while (*(msg + offset) != '\r' && *(msg + offset + 1) != '\n' && offset < len) ++offset;
-        if (offset >= len)
-        {
+        if (offset >= len) {
             PRINT_ERROR("ending identifier error , check %s", head);
             return -EPROTO;
         }
@@ -206,8 +190,7 @@ public:
         : KvProtocolBase(sockfd) {}
 
 protected:
-    virtual ssize_t encodeSend (const ResValueType &res)
-    {
+    virtual ssize_t encodeSend (const ResValueType &res) {
         size_t sizeCount = 0;
         getSizeCount(res, sizeCount);
         sendMsg.clear();
@@ -221,20 +204,17 @@ protected:
     }
 
 private:
-    int encodeProto (const ResValueType &res)
-    {
-        switch (res.model)
-        {
+    int encodeProto (const ResValueType &res) {
+        switch (res.model) {
             case ResValueType::ReplyModel::REPLY_UNKNOWN:
-                return -EINVAL;
+                errno = EINVAL;
+                return -errno;
             case ResValueType::ReplyModel::REPLY_STATUS:
                 return encodeStringItem(res);
             case ResValueType::ReplyModel::REPLY_ERROR:
                 return encodeErrorItem(res);
             case ResValueType::ReplyModel::REPLY_INTEGER:
                 return encodeIntegerItem(res);
-            case ResValueType::ReplyModel::REPLY_NIL:
-                return encodeStringItem(res);
             case ResValueType::ReplyModel::REPLY_STRING:
                 return encodeBulkStringItem(res);
             case ResValueType::ReplyModel::REPLY_ARRAY:
@@ -244,29 +224,25 @@ private:
         return 0;
     }
 
-    inline int encodeStringItem (const ResValueType &res)
-    {
+    inline int encodeStringItem (const ResValueType &res) {
         sendMsg += '+';
         encodeValueItemCommon(res);
         return 0;
     }
 
-    inline int encodeIntegerItem (const ResValueType &res)
-    {
+    inline int encodeIntegerItem (const ResValueType &res) {
         sendMsg += ':';
         encodeValueItemCommon(res);
         return 0;
     }
 
-    inline int encodeErrorItem (const ResValueType &res)
-    {
+    inline int encodeErrorItem (const ResValueType &res) {
         sendMsg += '-';
         encodeValueItemCommon(res);
         return 0;
     }
 
-    inline int encodeBulkStringItem (const ResValueType &res)
-    {
+    inline int encodeBulkStringItem (const ResValueType &res) {
         sendMsg += '$';
         sendMsg += std::to_string(res.value.size());
         sendMsg += "\r\n";
@@ -274,8 +250,7 @@ private:
         return 0;
     }
 
-    inline int encodeArrayItem (const ResValueType &res)
-    {
+    inline int encodeArrayItem (const ResValueType &res) {
         sendMsg += '*';
         sendMsg += std::to_string(res.elements.size());
         sendMsg += "\r\n";
@@ -286,11 +261,9 @@ private:
         return 0;
     }
 
-    ssize_t encodeToSend ()
-    {
+    ssize_t encodeToSend () {
         ssize_t ret;
-        do
-        {
+        do {
             ret = ::send(sockfd, sendMsg.c_str(), sendMsg.size(), 0);
             if (ret == -1 && errno == EINTR)
                 continue;
@@ -303,18 +276,15 @@ private:
         return ret;
     }
 
-    inline void encodeValueItemCommon (const ResValueType &res)
-    {
+    inline void encodeValueItemCommon (const ResValueType &res) {
         sendMsg += res.value;
         sendMsg += "\r\n";
     }
 
-    void getSizeCount (const ResValueType &res, size_t &sizeCount) const
-    {
+    void getSizeCount (const ResValueType &res, size_t &sizeCount) const {
         if (res.model != ResValueType::ReplyModel::REPLY_ARRAY)
             sizeCount += res.value.size() + 3;
-        else
-        {
+        else {
             for (auto &v : res.elements)
                 getSizeCount(v, sizeCount);
         }
@@ -329,5 +299,9 @@ public:
 
     explicit KvProtocol (int sockfd)
         : KvProtocolBase(sockfd), KvProtocolRecv(sockfd), KvProtocolSend(sockfd) {}
+
+    inline StringType getSendMsg () const noexcept {
+        return sendMsg;
+    }
 };
 #endif //LINUX_SERVER_LIB_KV_STORE_NET_KV_PROTOCOL_H_

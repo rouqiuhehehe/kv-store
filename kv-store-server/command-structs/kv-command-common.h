@@ -8,13 +8,23 @@
 #define ENUM_TO_INT(Command) static_cast<int>(Command)
 #define EVENT_OBSERVER_EMIT(Command) eventObserver.emit(static_cast<int>(Command), &eventAddObserverParams);
 
+#define VALUE_DATA_STRUCTURE_ERROR \
+        KV_ASSERT(false);   \
+        unreachable()
+
+class KvServer;
+class KeyOfValue;
 class CommandCommon
 {
 public:
-    // 调用handler的 前置钩子
-    // return false 为不调用handler 直接返回 需填充res
-    inline virtual bool handlerBefore (ParamsType &params) = 0;
-    virtual ~CommandCommon() = default;
+    virtual ~CommandCommon () = default;
+
+    static inline std::chrono::milliseconds getNow () noexcept
+    {
+        return std::chrono::duration_cast <std::chrono::milliseconds>(
+            std::chrono::system_clock::now().time_since_epoch());
+    }
+
 protected:
     /*
      * 检查参数
@@ -35,6 +45,23 @@ protected:
             paramsNum == -1 ? commandParams.params.empty() : expand ? (commandParams.params.size()
                 < static_cast<size_t>(paramsNum)) : (commandParams.params.size()
                 != static_cast<size_t>(paramsNum));
+        if (hasError)
+        {
+            resValue.setErrorStr(commandParams, ResValueType::ErrorType::WRONG_NUMBER);
+            return false;
+        }
+
+        return true;
+    }
+
+    static inline bool checkHasParams (
+        const CommandParams &commandParams,
+        ResValueType &resValue,
+        size_t min,
+        size_t max
+    )
+    {
+        bool hasError = commandParams.params.size() < min || commandParams.params.size() > max;
         if (hasError)
         {
             resValue.setErrorStr(commandParams, ResValueType::ErrorType::WRONG_NUMBER);
@@ -103,18 +130,25 @@ protected:
 
         return true;
     }
-
-    static void delKeyValue (const std::string &key)
-    {
-        eventAddObserverParams.key = key;
-
-        EVENT_OBSERVER_EMIT(EventType::DEL_KEY);
-    }
-
-    static EventAddObserverParams eventAddObserverParams;
-    static EventsObserverType eventObserver;
 };
 
-EventAddObserverParams CommandCommon::eventAddObserverParams;
-EventsObserverType CommandCommon::eventObserver;
+class CommandCommonWithServerPtr : protected CommandCommon
+{
+public:
+    explicit CommandCommonWithServerPtr (KvServer *server)
+        : server(server) {}
+
+    // 调用handler的 前置钩子
+    // return false 为不调用handler 直接返回 需填充res
+    inline virtual bool handlerBefore (ParamsType &params) = 0;
+
+    size_t delKeyValue (const StringType &key) const;
+    bool setExpire (const StringType &key, std::chrono::milliseconds expire) const;
+    KeyOfValue &setNewKey (const StringType &key, StructType structType) const;
+
+
+    inline void clear() const noexcept;
+    KvServer *server;
+};
+
 #endif //LINUX_SERVER_LIB_KV_STORE_COMMAND_STRUCTS_KV_COMMAND_COMMON_H_

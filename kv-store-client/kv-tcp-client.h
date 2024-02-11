@@ -12,18 +12,15 @@
 class KvTcpClient
 {
 public:
-    KvTcpClient (const char *host, uint16_t port)
-    {
+    KvTcpClient (const char *host, uint16_t port) {
         createTcpClient(host, port);
     }
-    inline int getClientFd () const
-    {
+    inline int getClientFd () const {
         return clientFd;
     }
 
 private:
-    void createTcpClient (const char *host, uint16_t port)
-    {
+    void createTcpClient (const char *host, uint16_t port) {
         int sockfd = socket(AF_INET, SOCK_STREAM, 0);
 
         struct sockaddr_in sockAddr {
@@ -35,14 +32,15 @@ private:
         };
 
         int ret = connect(sockfd, (const struct sockaddr *)&sockAddr, sizeof(struct sockaddr));
-        if (ret != 0)
-        {
+        if (ret != 0) {
             PRINT_ERROR("connect error : %s", strerror(errno));
             exit(EXIT_FAILURE);
         }
 
         fcntl(sockfd, F_SETFL, O_NONBLOCK);
         clientFd = sockfd;
+
+        // PRINT_INFO("connect success on %s:%d", host, port);
     }
 
     int clientFd {};

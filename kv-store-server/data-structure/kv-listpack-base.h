@@ -121,33 +121,17 @@ namespace __KV_PRIVATE__
     class ListPackHelper
     {
     public:
-        union DataType // NOLINT
-        {
-            struct // NOLINT
-            {
-                const char *s;
-                size_t len;
-            } str;
-            int64_t val;
-        };
-        enum class DataTypeEnum
-        {
-            STRING,
-            INTEGER,
-            ERROR
-        };
-        struct IteratorDataType
-        {
-            DataType data;
-            DataTypeEnum mode;
-        };
+        using IteratorDataType = DataUnion <>;
+        using DataTypeEnum = ::DataTypeEnum;
+        using DataType = decltype(IteratorDataType::data);
         class IteratorBase
         {
             friend class ListPack;
             friend class ::KvListPack;
         public:
-            virtual inline bool operator== (const IteratorBase &it) const noexcept
-            {
+            FORWARD_ITERATOR_TYPE(IteratorDataType);
+
+            virtual inline bool operator== (const IteratorBase &it) const noexcept {
                 if (!p && !it.p)
                     return true;
                 if (p != it.p)
@@ -162,21 +146,17 @@ namespace __KV_PRIVATE__
 
                 return true;
             }
-            virtual inline bool operator!= (const IteratorBase &it) const noexcept
-            {
+            virtual inline bool operator!= (const IteratorBase &it) const noexcept {
                 return !(*this == it);
             }
-            virtual inline explicit operator bool () const noexcept
-            {
+            virtual inline explicit operator bool () const noexcept {
                 return p != nullptr && data.mode != DataTypeEnum::ERROR;
             }
 
-            virtual inline const IteratorDataType &operator* () const noexcept
-            {
+            virtual inline const IteratorDataType &operator* () const noexcept {
                 return data;
             }
-            virtual inline const IteratorDataType *operator-> () const noexcept
-            {
+            virtual inline const IteratorDataType *operator-> () const noexcept {
                 return &data;
             }
 
@@ -194,8 +174,7 @@ namespace __KV_PRIVATE__
             friend class ::KvListPack;
             friend class QuickListBase;
         public:
-            virtual inline Iterator &operator++ ()
-            {
+            virtual inline Iterator &operator++ () {
                 p += entrySize;
 
                 getVal();
@@ -209,14 +188,12 @@ namespace __KV_PRIVATE__
             }
         protected:
             explicit Iterator (const uint8_t *ptr)
-                : IteratorBase(ptr)
-            {
+                : IteratorBase(ptr) {
                 if (p)
                     getVal();
             }
 
-            void getVal ()
-            {
+            void getVal () {
                 if (*p == LP_END)
                     p = nullptr;
                 else
@@ -230,8 +207,7 @@ namespace __KV_PRIVATE__
             friend class ::KvListPack;
             friend class QuickListBase;
         public:
-            virtual inline ReverseIterator &operator++ ()
-            {
+            virtual inline ReverseIterator &operator++ () {
                 p -= entrySize;
                 if (p == firstEntry)
                     p = nullptr;
@@ -248,15 +224,13 @@ namespace __KV_PRIVATE__
             }
         protected:
             explicit ReverseIterator (const uint8_t *listPack, const uint8_t *ptr)
-                : IteratorBase(ptr), firstEntry(listPack + LP_HEAD_SIZE)
-            {
+                : IteratorBase(ptr), firstEntry(listPack + LP_HEAD_SIZE) {
                 if (ptr <= firstEntry) p = nullptr;
                 if (p)
                     getValue();
             }
 
-            inline void getValue ()
-            {
+            inline void getValue () {
                 uint8_t backLenSize;
                 entrySize = listPackDecodingBackLen(p, &backLenSize);
                 entrySize += backLenSize;
@@ -280,33 +254,28 @@ namespace __KV_PRIVATE__
 
         // 获取int 数据编码和编码长度
         template <class T>
-        static IntegerCodingStruct listPackEncodeInteger (T v) noexcept
-        {
+        static IntegerCodingStruct listPackEncodeInteger (T v) noexcept {
 #define TRANSFORM_NEGATIVE(bit) if((v) < 0) (v) += (1LL << (bit))
 #define GET_LOW_8BIT(v) ((v) & 0xff)
             IntegerCodingStruct integerCoding {};
-            if (v >= LP_ENCODING_UINT_7BIT_MIN && v <= LP_ENCODING_UINT_7BIT_MAX)
-            {
+            if (v >= LP_ENCODING_UINT_7BIT_MIN && v <= LP_ENCODING_UINT_7BIT_MAX) {
                 integerCoding.coding[0] = v;
                 integerCoding.len = LP_ENCODING_INT_LEN(LP_ENCODING_UINT_7BIT_ENTRY_SIZE);
             }
-            else if (v >= LP_ENCODING_INT_13BIT_MIN && v <= LP_ENCODING_INT_13BIT_MAX)
-            {
+            else if (v >= LP_ENCODING_INT_13BIT_MIN && v <= LP_ENCODING_INT_13BIT_MAX) {
                 TRANSFORM_NEGATIVE(13);
                 integerCoding.coding[0] = LP_ENCODING_INT_13BIT | (v >> 8);
                 integerCoding.coding[1] = GET_LOW_8BIT(v);
                 integerCoding.len = LP_ENCODING_INT_LEN(LP_ENCODING_INT_13BIT_ENTRY_SIZE);
             }
-            else if (v >= LP_ENCODING_INT_16BIT_MIN && v <= LP_ENCODING_INT_16BIT_MAX)
-            {
+            else if (v >= LP_ENCODING_INT_16BIT_MIN && v <= LP_ENCODING_INT_16BIT_MAX) {
                 TRANSFORM_NEGATIVE(16);
                 integerCoding.coding[0] = LP_ENCODING_INT_16BIT;
                 integerCoding.coding[1] = GET_LOW_8BIT(v);
                 integerCoding.coding[2] = v >> 8;
                 integerCoding.len = LP_ENCODING_INT_LEN(LP_ENCODING_INT_16BIT_ENTRY_SIZE);
             }
-            else if (v >= LP_ENCODING_INT_24BIT_MIN && v <= LP_ENCODING_INT_24BIT_MAX)
-            {
+            else if (v >= LP_ENCODING_INT_24BIT_MIN && v <= LP_ENCODING_INT_24BIT_MAX) {
                 TRANSFORM_NEGATIVE(24);
                 integerCoding.coding[0] = LP_ENCODING_INT_24BIT;
                 integerCoding.coding[1] = GET_LOW_8BIT(v);
@@ -314,8 +283,7 @@ namespace __KV_PRIVATE__
                 integerCoding.coding[3] = v >> 16;
                 integerCoding.len = LP_ENCODING_INT_LEN(LP_ENCODING_INT_24BIT_ENTRY_SIZE);
             }
-            else if (v >= LP_ENCODING_INT_32BIT_MIN && v <= LP_ENCODING_INT_32BIT_MAX)
-            {
+            else if (v >= LP_ENCODING_INT_32BIT_MIN && v <= LP_ENCODING_INT_32BIT_MAX) {
                 TRANSFORM_NEGATIVE(32);
                 integerCoding.coding[0] = LP_ENCODING_INT_32BIT;
                 integerCoding.coding[1] = GET_LOW_8BIT(v);
@@ -324,8 +292,7 @@ namespace __KV_PRIVATE__
                 integerCoding.coding[4] = v >> 24;
                 integerCoding.len = LP_ENCODING_INT_LEN(LP_ENCODING_INT_32BIT_ENTRY_SIZE);
             }
-            else
-            {
+            else {
                 uint64_t uv = v;
                 integerCoding.coding[0] = LP_ENCODING_INT_64BIT;
                 integerCoding.coding[1] = GET_LOW_8BIT(uv);
@@ -344,24 +311,20 @@ namespace __KV_PRIVATE__
 #undef GET_LOW_8BIT
         }
 
-        static StringCodingStruct listPackEncodeString (const StringType &s) noexcept
-        {
+        static StringCodingStruct listPackEncodeString (const StringType &s) noexcept {
             StringCodingStruct stringCodingStruct {};
 
             auto size = s.size();
-            if (size <= LP_ENCODING_STR_6BIT_MAX)
-            {
+            if (size <= LP_ENCODING_STR_6BIT_MAX) {
                 stringCodingStruct.coding[0] = size | LP_ENCODING_STR_6BIT;
                 stringCodingStruct.len = 1;
             }
-            else if (size <= LP_ENCODING_STR_12BIT_MAX)
-            {
+            else if (size <= LP_ENCODING_STR_12BIT_MAX) {
                 stringCodingStruct.coding[0] = (size >> 8) | LP_ENCODING_STR_12BIT;
                 stringCodingStruct.coding[1] = size & 0xff;
                 stringCodingStruct.len = 2;
             }
-            else if (size <= LP_ENCODING_STR_32BIT_MAX)
-            {
+            else if (size <= LP_ENCODING_STR_32BIT_MAX) {
                 stringCodingStruct.coding[0] = LP_ENCODING_INT_32BIT;
                 stringCodingStruct.coding[1] = size >> 24;
                 stringCodingStruct.coding[2] = (size >> 16) & 0xff;
@@ -369,8 +332,7 @@ namespace __KV_PRIVATE__
                 stringCodingStruct.coding[4] = size & 0xff;
                 stringCodingStruct.len = 5;
             }
-            else
-            {
+            else {
                 PRINT_ERROR(
                     "out of range in string size, Maximum allowed length : %d, string size : %d",
                     LP_ENCODING_STR_32BIT_MAX,
@@ -382,38 +344,32 @@ namespace __KV_PRIVATE__
         }
 
         // 获取节点backLen 编码及编码长度
-        static BackLenStruct listPackEncodingBackLen (size_t v) noexcept
-        {
+        static BackLenStruct listPackEncodingBackLen (size_t v) noexcept {
 #define GET_LOW_7BIT_AND_FILL_HIGHEST(v) (((v) & 0x7f) | 0x80)
             BackLenStruct backLenStruct {};
-            if (v <= BACK_LEN_8BIT_MAX)
-            {
+            if (v <= BACK_LEN_8BIT_MAX) {
                 backLenStruct.coding[0] = v;
                 backLenStruct.len = 1;
             }
-            else if (v <= BACK_LEN_16BIT_MAX)
-            {
+            else if (v <= BACK_LEN_16BIT_MAX) {
                 backLenStruct.coding[0] = v >> 7;
                 backLenStruct.coding[1] = GET_LOW_7BIT_AND_FILL_HIGHEST(v);
                 backLenStruct.len = 2;
             }
-            else if (v <= BACK_LEN_24BIT_MAX)
-            {
+            else if (v <= BACK_LEN_24BIT_MAX) {
                 backLenStruct.coding[0] = v >> 14;
                 backLenStruct.coding[1] = GET_LOW_7BIT_AND_FILL_HIGHEST(v >> 7);
                 backLenStruct.coding[2] = GET_LOW_7BIT_AND_FILL_HIGHEST(v);
                 backLenStruct.len = 3;
             }
-            else if (v <= BACK_LEN_32BIT_MAX)
-            {
+            else if (v <= BACK_LEN_32BIT_MAX) {
                 backLenStruct.coding[0] = v >> 21;
                 backLenStruct.coding[1] = GET_LOW_7BIT_AND_FILL_HIGHEST(v >> 14);
                 backLenStruct.coding[2] = GET_LOW_7BIT_AND_FILL_HIGHEST(v >> 7);
                 backLenStruct.coding[3] = GET_LOW_7BIT_AND_FILL_HIGHEST(v);
                 backLenStruct.len = 4;
             }
-            else
-            {
+            else {
                 backLenStruct.coding[0] = v >> 28;
                 backLenStruct.coding[1] = GET_LOW_7BIT_AND_FILL_HIGHEST(v >> 21);
                 backLenStruct.coding[2] = GET_LOW_7BIT_AND_FILL_HIGHEST(v >> 14);
@@ -425,26 +381,23 @@ namespace __KV_PRIVATE__
 #undef GET_LOW_7BIT_AND_FILL_HIGHEST
         }
 
-        static size_t listPackDecodingBackLen (const uint8_t *p, uint8_t *backLenSize = nullptr)
-        {
+        static size_t listPackDecodingBackLen (const uint8_t *p, uint8_t *backLenSize = nullptr) {
             size_t shift = 0;
             size_t val = 0;
             auto *temp = p - 1;
 
-            while (shift <= 28)
-            {
+            while (shift <= 28) {
                 val |= ((*temp & 127) << shift);
                 if (!(*temp & 128)) break;
                 temp--;
                 shift += 7;
             }
-            if (backLenSize) *backLenSize = (p - temp) / sizeof(uint8_t);
+            if (backLenSize) *backLenSize = p - temp;
 
             return val;
         }
 
-        static IteratorDataType listPackGetValue (const uint8_t *p, size_t *entrySize = nullptr)
-        {
+        static IteratorDataType listPackGetValue (const uint8_t *p, size_t *entrySize = nullptr) {
             IteratorDataType data {};
             BackLenStruct backLenStruct {};
 #define FILL_STR_FIELD(bit) \
@@ -468,59 +421,47 @@ namespace __KV_PRIVATE__
             data.data.val |= 1ll << 63; \
         }} while(0)
 
-            if (!p)
-            {
+            if (!p) {
                 PRINT_ERROR("params : point is null");
                 data.mode = DataTypeEnum::ERROR;
             }
-            else
-            {
-                if (LP_ENCODING_IS_STR_6BIT(*p))
-                {
+            else {
+                if (LP_ENCODING_IS_STR_6BIT(*p)) {
                     FILL_STR_FIELD(6);
                 }
-                else if (LP_ENCODING_IS_STR_12BIT(*p))
-                {
+                else if (LP_ENCODING_IS_STR_12BIT(*p)) {
                     FILL_STR_FIELD(12);
                 }
-                else if (LP_ENCODING_IS_STR_32BIT(*p))
-                {
+                else if (LP_ENCODING_IS_STR_32BIT(*p)) {
                     FILL_STR_FIELD(32);
                 }
-                else if (LP_ENCODING_IS_UINT_7BIT(*p))
-                {
+                else if (LP_ENCODING_IS_UINT_7BIT(*p)) {
                     FILL_INTEGER_ENTRY_SIZE_AND_MODEL(*p & 0x7f, LP_ENCODING_UINT_7BIT_ENTRY_SIZE);
                 }
-                else if (LP_ENCODING_IS_INT_13BIT(*p))
-                {
+                else if (LP_ENCODING_IS_INT_13BIT(*p)) {
                     FILL_INTEGER_FIELD((p[0] & 0x1f) << 8 | p[1], 13);
                 }
-                else if (LP_ENCODING_IS_INT_16BIT(*p))
-                {
+                else if (LP_ENCODING_IS_INT_16BIT(*p)) {
                     FILL_INTEGER_FIELD(p[1] | p[2] << 8, 16);
                 }
-                else if (LP_ENCODING_IS_INT_24BIT(*p))
-                {
+                else if (LP_ENCODING_IS_INT_24BIT(*p)) {
                     FILL_INTEGER_FIELD((uint64_t)p[1] | (uint64_t)p[2] << 8 | (uint64_t)p[3] << 16,
                         24);
                 }
-                else if (LP_ENCODING_IS_INT_32BIT(*p))
-                {
+                else if (LP_ENCODING_IS_INT_32BIT(*p)) {
                     FILL_INTEGER_FIELD(
                         (uint64_t)p[1] | (uint64_t)p[2] << 8 | (uint64_t)p[3] << 16
                             | (uint64_t)p[3] << 24,
                         32);
                 }
-                else if (LP_ENCODING_IS_INT_64BIT(*p))
-                {
+                else if (LP_ENCODING_IS_INT_64BIT(*p)) {
                     FILL_INTEGER_ENTRY_SIZE_AND_MODEL(
                         (uint64_t)p[1] | (uint64_t)p[2] << 8 | (uint64_t)p[3] << 16
                             | (uint64_t)p[4] << 24 | (uint64_t)p[5] << 32 | (uint64_t)p[6] << 40
                             | (uint64_t)p[7] << 48 | (uint64_t)p[8] << 56,
                         LP_ENCODING_INT_64BIT_ENTRY_SIZE);
                 }
-                else
-                {
+                else {
                     PRINT_ERROR("listPack encoding error");
                     data.mode = DataTypeEnum::ERROR;
                 }
@@ -537,8 +478,7 @@ namespace __KV_PRIVATE__
             const StringType &s,
             const StringCodingStruct &stringCodingStruct,
             const BackLenStruct &backLenStruct
-        )
-        {
+        ) {
             auto *temp = p;
             // 填充encoding
             memcpy(temp, stringCodingStruct.coding, stringCodingStruct.len);
@@ -554,8 +494,7 @@ namespace __KV_PRIVATE__
             uint8_t *p,
             const IntegerCodingStruct &integerCodingStruct,
             const BackLenStruct &backLenStruct
-        )
-        {
+        ) {
             memcpy(p, integerCodingStruct.coding, integerCodingStruct.len);
             memcpy(p + integerCodingStruct.len, backLenStruct.coding, backLenStruct.len);
         }
@@ -564,28 +503,23 @@ namespace __KV_PRIVATE__
     class ListPack : protected ListPackHelper
     {
     protected:
-        ListPack ()
-        {
+        ListPack () {
             init();
         }
 
-        ~ListPack () noexcept
-        {
+        ~ListPack () noexcept {
             free(listPack);
         }
 
-        ListPack (const ListPack &r)
-        {
+        ListPack (const ListPack &r) {
             operator=(r);
         }
 
-        ListPack (ListPack &&r) noexcept
-        {
+        ListPack (ListPack &&r) noexcept {
             operator=(std::move(r));
         }
 
-        ListPack &operator= (const ListPack &r)
-        {
+        ListPack &operator= (const ListPack &r) {
             if (this == &r)
                 return *this;
 
@@ -596,8 +530,7 @@ namespace __KV_PRIVATE__
             return *this;
         }
 
-        ListPack &operator= (ListPack &&r) noexcept
-        {
+        ListPack &operator= (ListPack &&r) noexcept {
             if (this == &r)
                 return *this;
 
@@ -607,17 +540,14 @@ namespace __KV_PRIVATE__
             return *this;
         }
 
-        void clear () noexcept
-        {
+        void clear () noexcept {
             free(listPack);
             listPack = nullptr;
         }
 
-        void init()
-        {
+        void init () {
             listPack = static_cast<uint8_t *>(malloc(LP_HEAD_SIZE + 1));
-            if (!listPack)
-            {
+            if (!listPack) {
                 PRINT_ERROR("malloc error");
                 return;
             }
@@ -627,8 +557,7 @@ namespace __KV_PRIVATE__
             *(listPack + LP_HEAD_SIZE) = LP_END;
         }
 
-        size_t listPackMerge (const ListPack &r)
-        {
+        size_t listPackMerge (const ListPack &r) {
             auto rListSize = r.listPackGetHeadTotalSize() - LP_HEAD_SIZE - 1;
             auto rEle = r.listPackGetHeadElementsSize();
             auto size = listPackGetHeadTotalSize();
@@ -643,8 +572,7 @@ namespace __KV_PRIVATE__
             return size + rListSize;
         }
 
-        size_t listPackInsert (off_t offset, const StringType &s)
-        {
+        size_t listPackInsert (off_t offset, const StringType &s) {
             long long v;
             if (Utils::StringHelper::stringIsLL(s, &v))
                 return listPackInsert(offset, v);
@@ -654,8 +582,7 @@ namespace __KV_PRIVATE__
 
         template <class T, class = typename std::enable_if <
             std::is_integral <typename std::remove_reference <T>::type>::value, T>::type>
-        size_t listPackInsert (off_t offset, T val)
-        {
+        size_t listPackInsert (off_t offset, T val) {
             auto encodingStruct = listPackEncodeInteger(val);
             auto backLenStruct = listPackEncodingBackLen(encodingStruct.len);
 
@@ -670,15 +597,13 @@ namespace __KV_PRIVATE__
 
         template <class T, class = typename std::enable_if <
             std::is_integral <typename std::remove_reference <T>::type>::value, T>::type>
-        size_t listPackInsert (off_t offset, std::initializer_list <T> val)
-        {
+        size_t listPackInsert (off_t offset, std::initializer_list <T> val) {
             auto size = val.size();
             IntegerCodingStruct integerCodingStruct[size];
             BackLenStruct backLenStruct[size];
             auto it = val.begin();
             size_t newSize = listPackGetHeadTotalSize();
-            for (size_t i = 0; i < size; ++i)
-            {
+            for (size_t i = 0; i < size; ++i) {
                 integerCodingStruct[i] = listPackEncodeInteger(*it);
                 backLenStruct[i] = listPackEncodingBackLen(integerCodingStruct[i].len);
                 newSize += integerCodingStruct[i].len + backLenStruct[i].len;
@@ -688,8 +613,7 @@ namespace __KV_PRIVATE__
                 return 0;
 
             off_t oldOff = offset;
-            for (size_t i = 0; i < size; ++i)
-            {
+            for (size_t i = 0; i < size; ++i) {
                 listPackFillIntegerMemory(
                     listPack + offset,
                     integerCodingStruct[i],
@@ -701,19 +625,16 @@ namespace __KV_PRIVATE__
             return offset - oldOff;
         }
 
-        size_t listPackDelete (off_t offset, size_t num)
-        {
+        size_t listPackDelete (off_t offset, size_t num) {
             auto *p = listPack + offset;
-            if (OUT_OF_RANGE(p))
-            {
+            if (OUT_OF_RANGE(p)) {
                 PRINT_ERROR("out of range in listPack, listPack : %p, p : %p", listPack, p);
                 return 0;
             }
 
             size_t deleteNum = 0;
             size_t entrySize;
-            for (size_t i = 0; i < num; ++i)
-            {
+            for (size_t i = 0; i < num; ++i) {
                 if (*p == LP_END)
                     break;
 
@@ -725,16 +646,18 @@ namespace __KV_PRIVATE__
             return listPackDeleteSafe(offset, p - listPack, deleteNum);
         }
 
-        size_t listPackDeleteSafe (off_t begin, off_t end, size_t num)
-        {
-            if (listPackOperationPrivate(end, listPackGetHeadTotalSize() - end + begin, -num))
+        size_t listPackDeleteSafe (off_t begin, off_t end, size_t num) {
+            if (begin == end) return 0;
+            if (listPackOperationPrivate(
+                end,
+                listPackGetHeadTotalSize() - end + begin,
+                static_cast<int>(-num)))
                 return num;
 
             return 0;
         }
 
-        bool listPackReplace (off_t offset, const StringType &s)
-        {
+        bool listPackReplace (off_t offset, const StringType &s) {
             long long val;
             if (Utils::StringHelper::stringIsLL(s, &val))
                 return listPackReplace(offset, val);
@@ -745,9 +668,9 @@ namespace __KV_PRIVATE__
             auto stringCodingStruct = listPackEncodeString(s);
             auto backLenStruct = listPackEncodingBackLen(stringCodingStruct.len + s.size());
 
-            int diff = stringCodingStruct.len + s.size() + backLenStruct.len - entrySize;
+            int diff = static_cast<int>(stringCodingStruct.len + s.size() + backLenStruct.len - entrySize);
             if (diff != 0 && !listPackOperationPrivate(
-                offset + entrySize,
+                offset + static_cast<off_t>(entrySize),
                 listPackGetHeadTotalSize() + diff,
                 0
             ))
@@ -759,8 +682,7 @@ namespace __KV_PRIVATE__
 
         template <class T, class = typename std::enable_if <
             std::is_integral <typename std::remove_reference <T>::type>::value, T>::type>
-        bool listPackReplace (off_t offset, T val)
-        {
+        bool listPackReplace (off_t offset, T val) {
             size_t entrySize;
             listPackGetValue(listPack + offset, &entrySize);
 
@@ -769,7 +691,7 @@ namespace __KV_PRIVATE__
 
             int diff = integerStruct.len + backLenStruct.len - entrySize;
             if (diff != 0 && !listPackOperationPrivate(
-                offset + entrySize,
+                offset + static_cast<off_t>(entrySize),
                 listPackGetHeadTotalSize() + diff,
                 0
             ))
@@ -781,10 +703,8 @@ namespace __KV_PRIVATE__
 
         template <class T, class = typename std::enable_if <
             std::is_integral <typename std::remove_reference <T>::type>::value, T>::type>
-        Iterator find (const T val) const
-        {
-            for (auto it = begin(); it != end(); ++it)
-            {
+        Iterator find (T val) const {
+            for (auto it = begin(); it != end(); ++it) {
                 if (it->mode == DataTypeEnum::INTEGER && it->data.val == val)
                     return it;
             }
@@ -792,14 +712,12 @@ namespace __KV_PRIVATE__
             return end();
         }
 
-        Iterator find (const StringType &s) const
-        {
+        Iterator find (const StringType &s) const {
             long long val;
             if (Utils::StringHelper::stringIsLL(s, &val))
                 return find(val);
 
-            for (auto it = begin(); it != end(); ++it)
-            {
+            for (auto it = begin(); it != end(); ++it) {
                 if (it->mode == DataTypeEnum::STRING && it->data.str.len == s.size()
                     && memcmp(it->data.str.s, s.c_str(), it->data.str.len) == 0)
                     return it;
@@ -808,42 +726,59 @@ namespace __KV_PRIVATE__
             return end();
         }
 
-        off_t getLastBitOffset () const noexcept
-        {
+        template <class T, class = typename std::enable_if <
+            std::is_integral <typename std::remove_reference <T>::type>::value, T>::type>
+        ReverseIterator findReverse (T val) const {
+            for (auto it = rbegin(); it != rend(); ++it) {
+                if (it->mode == DataTypeEnum::INTEGER && it->data.val == val)
+                    return it;
+            }
+
+            return rend();
+        }
+
+        ReverseIterator findReverse (const StringType &s) const {
+            long long val;
+            if (Utils::StringHelper::stringIsLL(s, &val))
+                return findReverse(val);
+
+            for (auto it = rbegin(); it != rend(); ++it) {
+                if (it->mode == DataTypeEnum::STRING && it->data.str.len == s.size()
+                    && memcmp(it->data.str.s, s.c_str(), it->data.str.len) == 0)
+                    return it;
+            }
+
+            return rend();
+        }
+
+        off_t getLastBitOffset () const noexcept {
             return static_cast<off_t>(listPackGetHeadTotalSize() - 1);
         }
 
-        Iterator begin () const noexcept
-        {
+        Iterator begin () const noexcept {
             return Iterator(listPack + LP_HEAD_SIZE);
         }
 
-        Iterator end () const noexcept
-        {
+        Iterator end () const noexcept {
             return Iterator(nullptr);
         }
 
-        ReverseIterator rbegin () const noexcept
-        {
+        ReverseIterator rbegin () const noexcept {
             return ReverseIterator(listPack, listPack + getLastBitOffset());
         }
 
-        ReverseIterator rend () const noexcept
-        {
+        ReverseIterator rend () const noexcept {
             return ReverseIterator(listPack, nullptr);
         }
 
-        const uint8_t *getListPackPtr () const noexcept
-        {
+        const uint8_t *getListPackPtr () const noexcept {
             return listPack;
         }
 
-        inline size_t listPackGetHeadElementsSize () const noexcept
-        {
+        inline size_t listPackGetHeadElementsSize () const noexcept {
             return *(listPack + 4) << 0 | *(listPack + 5) << 8;
         }
-        inline size_t listPackGetHeadTotalSize () const noexcept
-        {
+        inline size_t listPackGetHeadTotalSize () const noexcept {
             return (*(listPack)) << 0 | (*(listPack + 1)) << 8 | (*(listPack + 2)) << 16
                 | (*(listPack + 3)) << 24;
         }
@@ -852,16 +787,14 @@ namespace __KV_PRIVATE__
         bool listPackFillString (
             off_t offset,
             const std::initializer_list <StringType> &list
-        ) noexcept
-        {
+        ) noexcept {
             auto size = list.size();
             StringCodingStruct stringCodingStruct[size];
             BackLenStruct backLenStruct[size];
             auto it = list.begin();
             size_t totLen = 0;
             auto *p = listPack + offset;
-            for (size_t i = 0; i < size; ++i)
-            {
+            for (size_t i = 0; i < size; ++i) {
                 stringCodingStruct[i] = listPackEncodeString(*it);
                 if (!stringCodingStruct[i].len)
                     return false;
@@ -881,8 +814,7 @@ namespace __KV_PRIVATE__
             );
 
             it = list.begin();
-            for (size_t i = 0; i < size; ++i)
-            {
+            for (size_t i = 0; i < size; ++i) {
                 // 填充encoding
                 memcpy(p, stringCodingStruct[i].coding, stringCodingStruct[i].len);
                 p += stringCodingStruct[i].len;
@@ -898,8 +830,7 @@ namespace __KV_PRIVATE__
             return true;
         }
 
-        size_t listPackFillString (off_t offset, const StringType &s) noexcept
-        {
+        size_t listPackFillString (off_t offset, const StringType &s) noexcept {
             auto stringEncodingStruct = listPackEncodeString(s);
             if (!stringEncodingStruct.len)
                 return false;
@@ -916,8 +847,7 @@ namespace __KV_PRIVATE__
         }
 
         // 新长度，操作节点数
-        bool listPackOperationPrivate (off_t offset, size_t newSize, int count)
-        {
+        bool listPackOperationPrivate (off_t offset, size_t newSize, int count) {
             auto oldSize = listPackGetHeadTotalSize();
             if (newSize >= oldSize && !listPackResize(newSize))
                 return false;
@@ -936,11 +866,9 @@ namespace __KV_PRIVATE__
                 return false;
             return true;
         }
-        bool listPackResize (size_t size)
-        {
+        bool listPackResize (size_t size) {
             // 头部最大允许的size长度是4字节，超过抛错
-            if (size > std::numeric_limits <uint32_t>::max())
-            {
+            if (size > std::numeric_limits <uint32_t>::max()) {
                 PRINT_ERROR(
                     "out of range in listPack size, Maximum allowed length : %d, resize : %d",
                     std::numeric_limits <uint32_t>::max(),
@@ -948,8 +876,7 @@ namespace __KV_PRIVATE__
                 return false;
             }
             listPack = static_cast<uint8_t *>(realloc(listPack, size));
-            if (!listPack)
-            {
+            if (!listPack) {
                 PRINT_ERROR("realloc error");
                 return false;
             }
@@ -957,18 +884,15 @@ namespace __KV_PRIVATE__
             return true;
         }
 
-        inline void listPackSetHeadTotalSize (size_t v) noexcept
-        {
+        inline void listPackSetHeadTotalSize (size_t v) noexcept {
             *listPack = (v) & 0xff;
             *(listPack + 1) = ((v) >> 8) & 0xff;
             *(listPack + 2) = ((v) >> 16) & 0xff;
             *(listPack + 3) = ((v) >> 24) & 0xff;
         }
 
-        inline void listPackSetHeadElementsSize (size_t v) noexcept
-        {
-            if (v <= std::numeric_limits <uint16_t>::max())
-            {
+        inline void listPackSetHeadElementsSize (size_t v) noexcept {
+            if (v <= std::numeric_limits <uint16_t>::max()) {
                 *(listPack + 4) = v & 0xff;
                 *(listPack + 5) = (v >> 8) & 0xff;
             }

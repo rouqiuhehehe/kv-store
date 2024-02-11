@@ -7,7 +7,7 @@
 #include "data-structure/kv-incrementally-hash.h"
 #include <vector>
 template <class _Key, class _Val>
-using KvHashTable = IncrementallyHashTable <_Key, _Val>;
+using KvHashTable = IncrementallyHashTable <_Key, std::pair <const _Key, _Val>, std::__detail::_Select1st>;
 
 using StringType = std::string;
 using KeyType = StringType;
@@ -16,7 +16,7 @@ using FloatType = double;
 using ValueType = StringType;
 template <class T>
 using ArrayType = std::vector <T>;
-#include "data-structure/kv-value.h"
+#include "config/kv-value.h"
 #include "net/kv-protocol.h"
 
 class KvProtocolClient : public KvProtocol
@@ -28,16 +28,14 @@ public:
     using KvProtocol::KvProtocol;
     using KvProtocol::decodeRecv;
 
-    ssize_t encodeSend (const std::string &msg)
-    {
+    ssize_t encodeSend (const std::string &msg) {
         ResValueType res;
         res.model = ResValueType::ReplyModel::REPLY_ARRAY;
 
         auto vec = Utils::StringHelper::stringSplit(msg, ' ');
         ResValueType vecRes;
         vecRes.model = ResValueType::ReplyModel::REPLY_STRING;
-        for (auto &v : vec)
-        {
+        for (auto &v : vec) {
             vecRes.setStringValue(v);
             res.elements.emplace_back(vecRes);
         }

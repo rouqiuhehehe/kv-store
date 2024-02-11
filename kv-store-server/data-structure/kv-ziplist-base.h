@@ -89,8 +89,7 @@ namespace __KV_PRIVATE__
             friend class ZipListBase;
             friend class ::KvZipList;
         protected:
-            explicit Iterator (const uint8_t *const p)
-            {
+            explicit Iterator (const uint8_t *const p) {
                 if (!p)
                     entry.p = p;
                 else if (*p == ZIP_END)
@@ -99,16 +98,13 @@ namespace __KV_PRIVATE__
                     itData.mode = ZipListHelper::getEntryVal(itData.data, p, &entry);
             }
         public:
-            const IteratorDataType &operator* () const noexcept
-            {
+            const IteratorDataType &operator* () const noexcept {
                 return itData;
             }
-            const IteratorDataType *operator-> () const noexcept
-            {
+            const IteratorDataType *operator-> () const noexcept {
                 return &itData;
             }
-            Iterator &operator++ () noexcept
-            {
+            Iterator &operator++ () noexcept {
                 const uint8_t *p = entry.p + entry.headerSize + entry.len;
                 if (*p == ZIP_END)
                     entry.p = nullptr;
@@ -122,23 +118,19 @@ namespace __KV_PRIVATE__
                 ++*this;
                 return old;
             }
-            Iterator &operator+ (uint32_t c)
-            {
+            Iterator &operator+ (uint32_t c) {
                 while (c-- > 0)
                     ++*this;
 
                 return *this;
             }
-            bool operator== (const Iterator &r) const noexcept
-            {
+            bool operator== (const Iterator &r) const noexcept {
                 return entry.p == r.entry.p;
             }
-            bool operator!= (const Iterator &r) const noexcept
-            {
+            bool operator!= (const Iterator &r) const noexcept {
                 return !(*this == r);
             }
-            explicit operator bool () const noexcept
-            {
+            explicit operator bool () const noexcept {
                 return entry.p != nullptr;
             }
 
@@ -155,13 +147,11 @@ namespace __KV_PRIVATE__
             uint32_t len,
             int64_t &value,
             uint8_t &encoding
-        )
-        {
+        ) {
             if (len >= 32 || len == 0) return false;
             int64_t v;
             StringType str(reinterpret_cast<const char *>(s), len);
-            if (Utils::StringHelper::stringIsLL(str, reinterpret_cast<long long *>(&v)))
-            {
+            if (Utils::StringHelper::stringIsLL(str, reinterpret_cast<long long *>(&v))) {
                 encoding = zipEncodeIntegerEncoding(v);
 
                 value = v;
@@ -170,8 +160,7 @@ namespace __KV_PRIVATE__
             return false;
         }
 
-        static inline uint8_t zipEncodeIntegerEncoding (int64_t v)
-        {
+        static inline uint8_t zipEncodeIntegerEncoding (int64_t v) {
             uint8_t encoding;
             constexpr static int32_t
                 int24Min = std::numeric_limits <int32_t>::min() >> sizeof(uint8_t) * 8;
@@ -200,8 +189,7 @@ namespace __KV_PRIVATE__
             return encoding;
         }
 
-        static inline uint32_t zipEncodeLenSize (uint8_t encoding)
-        {
+        static inline uint32_t zipEncodeLenSize (uint8_t encoding) {
             if (encoding == ZIP_INT_16B || encoding == ZIP_INT_32B ||
                 encoding == ZIP_INT_24B || encoding == ZIP_INT_64B ||
                 encoding == ZIP_INT_8B)
@@ -218,10 +206,8 @@ namespace __KV_PRIVATE__
         }
 
         // 根据encoding获取data 所占字节数
-        static inline uint32_t zipIntSize (uint8_t encoding)
-        {
-            switch (encoding)
-            {
+        static inline uint32_t zipIntSize (uint8_t encoding) {
+            switch (encoding) {
                 case ZIP_INT_8B:
                     return 1;
                 case ZIP_INT_16B:
@@ -240,21 +226,17 @@ namespace __KV_PRIVATE__
             return 0;
         }
         // 判断data是否存储的字符串
-        static inline bool zipIsStr (uint8_t encoding) noexcept
-        {
+        static inline bool zipIsStr (uint8_t encoding) noexcept {
             return (encoding & ZIP_STR_MASK) < ZIP_STR_MASK;
         }
-        static inline void zipDecodeInteger (uint8_t *p, int64_t value, uint8_t encoding)
-        {
+        static inline void zipDecodeInteger (uint8_t *p, int64_t value, uint8_t encoding) {
             if (encoding == ZIP_INT_8B)
                 *p = static_cast<uint8_t>(value);
-            else if (encoding == ZIP_INT_16B)
-            {
+            else if (encoding == ZIP_INT_16B) {
                 memcpy(p, &value, sizeof(uint16_t));
                 memConv16(p);
             }
-            else if (encoding == ZIP_INT_24B)
-            {
+            else if (encoding == ZIP_INT_24B) {
                 // 先转成小端序
                 uint32_t rValue = intConv32(static_cast<int32_t>(value << 8));
                 memcpy(
@@ -262,36 +244,30 @@ namespace __KV_PRIVATE__
                     reinterpret_cast<uint8_t *>(&rValue) + 1,
                     sizeof(int32_t) - sizeof(int8_t));
             }
-            else if (encoding == ZIP_INT_32B)
-            {
+            else if (encoding == ZIP_INT_32B) {
                 memcpy(p, &value, sizeof(int32_t));
                 memConv32(p);
             }
-            else if (encoding == ZIP_INT_64B)
-            {
+            else if (encoding == ZIP_INT_64B) {
                 memcpy(p, &value, sizeof(int64_t));
                 memConv64(p);
             }
-            else if (encoding >= ZIP_INT_IMM_MIN && encoding <= ZIP_INT_IMM_MAX)
-            {
+            else if (encoding >= ZIP_INT_IMM_MIN && encoding <= ZIP_INT_IMM_MAX) {
                 // 不用存数据，数据存在encoding中
             }
             else
                 PRINT_ERROR("zipDecodeInteger error, encoding : %d", encoding);
         }
         // 将entry data 解码成数字 并赋值给data.val
-        static inline bool zipEncodeInteger (const Entry &entry, int64_t &data) noexcept
-        {
+        static inline bool zipEncodeInteger (const Entry &entry, int64_t &data) noexcept {
             auto *p = entry.p + entry.headerSize;
             if (entry.encoding == ZIP_INT_8B)
                 data = static_cast<int64_t>(*reinterpret_cast<const int8_t *>(p)); //NOLINT
-            else if (entry.encoding == ZIP_INT_16B)
-            {
+            else if (entry.encoding == ZIP_INT_16B) {
                 memcpy(&data, p, sizeof(int16_t));
                 memConv16(&data);
             }
-            else if (entry.encoding == ZIP_INT_24B)
-            {
+            else if (entry.encoding == ZIP_INT_24B) {
                 // 空出8个字节，复制24个字节
                 memcpy(
                     reinterpret_cast<uint8_t *>(&data) + 1,
@@ -302,20 +278,17 @@ namespace __KV_PRIVATE__
                 // 小端低位存低地址，假如储存的是0xfff，memcpy后 值为 0xfff0（指针指向低位），所以需要右移一位
                 data >>= 1;
             }
-            else if (entry.encoding == ZIP_INT_32B)
-            {
+            else if (entry.encoding == ZIP_INT_32B) {
                 memcpy(&data, p, sizeof(int32_t));
                 memConv32(&data);
             }
-            else if (entry.encoding == ZIP_INT_64B)
-            {
+            else if (entry.encoding == ZIP_INT_64B) {
                 memcpy(&data, p, sizeof(int64_t));
                 memConv64(&data);
             }
             else if (entry.encoding >= ZIP_INT_IMM_MIN && entry.encoding <= ZIP_INT_IMM_MAX)
                 data = (entry.encoding & 0xf) - 1; // 1111xxxx & 00001111 取出 xxxx - 1
-            else
-            {
+            else {
                 PRINT_ERROR("encoding error : %d", entry.encoding);
                 return false;
             }
@@ -324,11 +297,9 @@ namespace __KV_PRIVATE__
 
         // 根据encoding，编码data所占用长度
         // buf 至少需要5字节
-        static inline uint32_t zipEncodeEncoding (uint8_t encoding, uint32_t dataSize)
-        {
+        static inline uint32_t zipEncodeEncoding (uint8_t encoding, uint32_t dataSize) {
             uint32_t len;
-            if (zipIsStr(encoding))
-            {
+            if (zipIsStr(encoding)) {
                 if (dataSize < (1 << 6)) // 头两位用于编码00，只有6位可用，最大长度 (1 << 6) - 1
                     len = 1;
                 else if (dataSize < (1 << 14)) // 头两位用于编码01，双字节，有14位可用，最大长度 (1 << 14) - 1
@@ -345,11 +316,9 @@ namespace __KV_PRIVATE__
         // 此函数会填充buf
         // 根据encoding，编码data所占用长度
         // buf 至少需要5字节
-        static inline uint32_t zipEncodeEncoding (uint8_t *buf, uint8_t encoding, uint32_t dataSize)
-        {
+        static inline uint32_t zipEncodeEncoding (uint8_t *buf, uint8_t encoding, uint32_t dataSize) {
             uint32_t len;
-            if (zipIsStr(encoding))
-            {
+            if (zipIsStr(encoding)) {
                 if (dataSize < (1 << 6)) // 头两位用于编码00，只有6位可用，最大长度 (1 << 6) - 1
                 {
                     len = 1;
@@ -361,16 +330,14 @@ namespace __KV_PRIVATE__
                     buf[0] = ZIP_STR_14B | (dataSize >> 8); // 高6位
                     buf[1] = dataSize & 0xff;  // 低8位
                 }
-                else
-                {
+                else {
                     len = 5;
                     buf[0] = ZIP_STR_32B;
                     *reinterpret_cast<uint32_t *>(buf + 1) =
                         intConv32(static_cast<int32_t>(dataSize));
                 }
             }
-            else
-            {
+            else {
                 len = 1;
                 buf[0] = encoding;
             }
@@ -378,15 +345,13 @@ namespace __KV_PRIVATE__
             return len;
         }
 
-        static inline uint32_t zipDecodePrevLenSize (uint8_t prevLenSize)
-        {
+        static inline uint32_t zipDecodePrevLenSize (uint8_t prevLenSize) {
             if (prevLenSize < ZIP_BIG_PREV_LEN)
                 return 1;
             return 5;
         }
 
-        static inline size_t zipDecodePrev (Entry &entry, const uint8_t *p) noexcept
-        {
+        static inline size_t zipDecodePrev (Entry &entry, const uint8_t *p) noexcept {
             entry.prevLenSize = zipDecodePrevLenSize(*p);
             if (entry.prevLenSize == 1)
                 entry.prevLen = *p;
@@ -396,8 +361,7 @@ namespace __KV_PRIVATE__
             return entry.prevLenSize;
         }
 
-        static inline void zipDecodeEncoding (Entry &entry, const uint8_t *p) noexcept
-        {
+        static inline void zipDecodeEncoding (Entry &entry, const uint8_t *p) noexcept {
             entry.encoding = *p;
             // 此处为占用2个bit的encoding
             if (entry.encoding < ZIP_STR_MASK)
@@ -405,11 +369,9 @@ namespace __KV_PRIVATE__
                 entry.encoding &= ZIP_STR_MASK;
         }
 
-        static inline size_t zipDecodeLen (Entry &entry, const uint8_t *p) noexcept
-        {
+        static inline size_t zipDecodeLen (Entry &entry, const uint8_t *p) noexcept {
             size_t ret = 1;
-            if (entry.encoding < ZIP_STR_MASK)
-            {
+            if (entry.encoding < ZIP_STR_MASK) {
                 if (entry.encoding == ZIP_STR_06B) // 00
                 {
                     entry.lenSize = 1;
@@ -427,18 +389,15 @@ namespace __KV_PRIVATE__
                     entry.len = intConv32(*reinterpret_cast<const int32_t *>(p + 1));
                     ret += 4;
                 }
-                else
-                {
+                else {
                     entry.lenSize = 0;
                     entry.len = 0;
                     PRINT_ERROR("zipList encode error : %p", p);
                 }
             }
-            else
-            {
+            else {
                 entry.lenSize = 1;
-                switch (entry.encoding)
-                {
+                switch (entry.encoding) {
                     case ZIP_INT_8B:
                         entry.len = 1;
                         break;
@@ -457,8 +416,7 @@ namespace __KV_PRIVATE__
                     default:
                         entry.len = 0;
                         // 1111xxxx	1 byte	4 bit 无符号整数，介于 0 至 12 之间
-                        if (entry.encoding < ZIP_INT_IMM_MIN || entry.encoding > ZIP_INT_IMM_MAX)
-                        {
+                        if (entry.encoding < ZIP_INT_IMM_MIN || entry.encoding > ZIP_INT_IMM_MAX) {
                             entry.lenSize = 0;
                             PRINT_ERROR("4 bit unsigned number must be 0 ~ 12, check %d",
                                 entry.encoding & 0xf);
@@ -469,8 +427,7 @@ namespace __KV_PRIVATE__
             return ret;
         }
 
-        static inline Entry zipEntry (const uint8_t *p) noexcept
-        {
+        static inline Entry zipEntry (const uint8_t *p) noexcept {
             Entry entry {};
             entry.p = p;
             p += zipDecodePrev(entry, p);
@@ -485,13 +442,11 @@ namespace __KV_PRIVATE__
             DataType &data,
             const uint8_t *p,
             Entry *entryPtr = nullptr
-        )
-        {
+        ) {
             Entry entry = zipEntry(p);
             if (entryPtr) *entryPtr = entry;
 
-            if (zipIsStr(entry.encoding))
-            {
+            if (zipIsStr(entry.encoding)) {
                 data.str.len = entry.len;
                 data.str.s = entry.p + entry.headerSize;
                 return DataTypeEnum::STRING;
@@ -511,25 +466,21 @@ namespace __KV_PRIVATE__
             clear();
         }
 
-        ~ZipListBase () noexcept
-        {
+        ~ZipListBase () noexcept {
             free(zipList);
         }
 
         ZipListBase (const ZipListBase &rhs) // NOLINT
-            : zipList(nullptr)
-        {
+            : zipList(nullptr) {
             operator=(rhs);
         }
 
         ZipListBase (ZipListBase &&rhs) noexcept // NOLINT
-            : zipList(nullptr)
-        {
+            : zipList(nullptr) {
             operator=(std::move(rhs));
         }
 
-        ZipListBase &operator= (const ZipListBase &rhs)
-        {
+        ZipListBase &operator= (const ZipListBase &rhs) {
             if (this == &rhs)
                 return *this;
             free(zipList);
@@ -542,8 +493,7 @@ namespace __KV_PRIVATE__
             return *this;
         }
 
-        ZipListBase &operator= (ZipListBase &&rhs) noexcept
-        {
+        ZipListBase &operator= (ZipListBase &&rhs) noexcept {
             if (this == &rhs)
                 return *this;
 
@@ -557,8 +507,7 @@ namespace __KV_PRIVATE__
             return *this;
         }
 
-        void clear () noexcept
-        {
+        void clear () noexcept {
             zipList = static_cast<uint8_t *>(malloc(HEAD_SIZE + sizeof(uint8_t)));
             resetHead();
             head->size = intConv32(HEAD_SIZE + sizeof(uint8_t));
@@ -568,8 +517,7 @@ namespace __KV_PRIVATE__
             zipList[HEAD_SIZE] = ZIP_END;
         }
 
-        Iterator begin () const noexcept
-        {
+        Iterator begin () const noexcept {
             return Iterator(zipList + HEAD_SIZE);
         }
 
@@ -578,16 +526,13 @@ namespace __KV_PRIVATE__
             return Iterator(nullptr);
         }
 
-        inline size_t size () const noexcept
-        {
+        inline size_t size () const noexcept {
             size_t count = intConv16(static_cast<int16_t>(head->count));
-            if (count >= std::numeric_limits <uint16_t>::max())
-            {
+            if (count >= std::numeric_limits <uint16_t>::max()) {
                 count = 0;
                 off_t offset = HEAD_SIZE;
                 Entry entry {};
-                while (*(zipList + offset) != ZIP_END)
-                {
+                while (*(zipList + offset) != ZIP_END) {
                     zipEntrySafe(offset, entry, false);
                     offset += static_cast<off_t>(entry.headerSize + entry.len);
                     count++;
@@ -598,8 +543,7 @@ namespace __KV_PRIVATE__
         }
 
         // 数据，数据长度，需要插入位置的上一个节点长度，需要插入的位置偏移量
-        bool zipListInsert (const uint8_t *s, uint32_t len, uint32_t prevLen, off_t offset) noexcept
-        {
+        bool zipListInsert (const uint8_t *s, uint32_t len, uint32_t prevLen, off_t offset) noexcept {
             int64_t v;
             uint8_t encoding = 0;
             size_t reqLen;
@@ -629,8 +573,7 @@ namespace __KV_PRIVATE__
 
         // 数据，数据长度，需要插入位置的上一个节点长度，需要插入的位置偏移量
         template <class T, class = typename std::enable_if <std::is_integral <T>::value, T>::type>
-        bool zipListInsert (T &&val, uint32_t prevLen, off_t offset) noexcept
-        {
+        bool zipListInsert (T &&val, uint32_t prevLen, off_t offset) noexcept {
             // 数字不需要穿dataSize
             constexpr uint32_t DATA_SIZE = 0;
             size_t reqLen;
@@ -655,8 +598,7 @@ namespace __KV_PRIVATE__
             return true;
         }
 
-        size_t zipListDelete (off_t offset, size_t num)
-        {
+        size_t zipListDelete (off_t offset, size_t num) {
             size_t deleted = 0;
             if (*(zipList + offset) == ZIP_END || num == 0)
                 return deleted;
@@ -668,10 +610,8 @@ namespace __KV_PRIVATE__
             const uint8_t *p = first.p + first.headerSize + first.len;
             deleted++;
 
-            for (size_t i = 1; i < num && *p != ZIP_END; ++i)
-            {
-                if (!zipEntrySafe(p - zipList, entry, false))
-                {
+            for (size_t i = 1; i < num && *p != ZIP_END; ++i) {
+                if (!zipEntrySafe(p - zipList, entry, false)) {
                     PRINT_ERROR("zip encode error on offset %d", p - zipList);
                     return 0;
                 }
@@ -682,8 +622,7 @@ namespace __KV_PRIVATE__
             return zipListDeletePrivate(p, first, deleted);
         }
 
-        Iterator zipListDelete (const Iterator &first, const Iterator &last)
-        {
+        Iterator zipListDelete (const Iterator &first, const Iterator &last) {
             size_t deleted = 0;
             if ((!first.entry.p && !last.entry.p) || (last.entry.p && first.entry.p > last.entry.p))
                 return end();
@@ -707,38 +646,30 @@ namespace __KV_PRIVATE__
             return end();
         }
 
-        Iterator zipListFind (const uint8_t *s, size_t len) const noexcept
-        {
+        Iterator zipListFind (const uint8_t *s, size_t len) const noexcept {
             Entry entry {};
             uint8_t *p = zipList + HEAD_SIZE;
             int64_t val;
             uint8_t encode = 0;
-            while (*p != ZIP_END)
-            {
-                if (!zipEntrySafe(p - zipList, entry, true))
-                {
+            while (*p != ZIP_END) {
+                if (!zipEntrySafe(p - zipList, entry, true)) {
                     PRINT_ERROR("zip encode error on offset %d", p - zipList);
                     return end();
                 }
 
-                if (zipIsStr(entry.encoding))
-                {
-                    if (len == entry.len && memcmp(entry.p + entry.headerSize, s, len) == 0)
-                    {
+                if (zipIsStr(entry.encoding)) {
+                    if (len == entry.len && memcmp(entry.p + entry.headerSize, s, len) == 0) {
                         return Iterator(p);
                     }
                 }
-                else
-                {
+                else {
                     // 只讲字符串转一次数字，如果上方if能够找到，就不需要转数字
-                    if (encode == 0)
-                    {
+                    if (encode == 0) {
                         if (!zipTryEncodeInteger(s, len, val, encode))
                             encode = ZIP_INT_8B + 1;
                     }
                     // 字符串可以转成数字
-                    if (encode != ZIP_INT_8B + 1)
-                    {
+                    if (encode != ZIP_INT_8B + 1) {
                         int64_t v;
                         zipEncodeInteger(entry, v);
                         if (v == val)
@@ -753,20 +684,16 @@ namespace __KV_PRIVATE__
         }
 
         template <class T, class = typename std::enable_if <std::is_integral <T>::value, T>::type>
-        Iterator zipListFind (T &&val) const noexcept
-        {
+        Iterator zipListFind (T &&val) const noexcept {
             Entry entry {};
             uint8_t *p = zipList + HEAD_SIZE;
-            while (*p != ZIP_END)
-            {
-                if (!zipEntrySafe(p - zipList, entry, true))
-                {
+            while (*p != ZIP_END) {
+                if (!zipEntrySafe(p - zipList, entry, true)) {
                     PRINT_ERROR("zip encode error on offset %d", p - zipList);
                     return end();
                 }
 
-                if (!zipIsStr(entry.encoding))
-                {
+                if (!zipIsStr(entry.encoding)) {
                     int64_t v;
                     zipEncodeInteger(entry, v);
                     if (v == val)
@@ -783,16 +710,14 @@ namespace __KV_PRIVATE__
             off_t offset,
             Entry &entry,
             bool validatePrevLen = false
-        ) const noexcept
-        {
+        ) const noexcept {
             uint8_t *zipFirst = zipList + HEAD_SIZE;
             uint8_t *zipLast = zipList + intConv32(static_cast<int32_t>(head->size)) - ZIP_END_SIZE;
 #define OUT_OF_RANGE(p) unlikely((p) < zipFirst || (p) > zipLast)
 
             uint8_t *p = zipList + offset;
             entry.p = p;
-            if (p >= zipFirst && p + 10 < zipLast)
-            {
+            if (p >= zipFirst && p + 10 < zipLast) {
                 entry = zipEntry(offset);
                 if (unlikely(entry.lenSize == 0))
                     return false;
@@ -830,30 +755,26 @@ namespace __KV_PRIVATE__
 #undef OUT_OF_RANGE
         }
 
-        inline Entry zipEntry (off_t offset) const noexcept
-        {
+        inline Entry zipEntry (off_t offset) const noexcept {
             uint8_t *p = zipList + offset;
             return ZipListHelper::zipEntry(p);
         }
 
     private:
         // reqLen插入的节点所占字节数
-        bool zipListInsertPrivate (size_t reqLen, off_t offset)
-        {
+        bool zipListInsertPrivate (size_t reqLen, off_t offset) {
             int nextDiff = 0;
             Entry tailEntry {};
 
             bool forceLarge = false;
             auto *p = zipList + offset;
-            if (*p != ZIP_END)
-            {
+            if (*p != ZIP_END) {
                 // 当前添加节点总长度所需prevLenSize字节数 - 当前添加节点后置节点的prevLenSize字节数
                 // 判断prevLenSize是否需要扩容/缩容
                 nextDiff = ZIP_PREV_LEN_SIZE(reqLen) - ZipListHelper::zipDecodePrevLenSize(*p);
                 // 之前节点需要缩容4字节，并且当前节点长度<4，则不做prevLenSize缩容，只做更新
                 // 必须保证reqLen + nextDiff >= 0，不然realloc会进行缩容，导致数据丢失
-                if (nextDiff == -4 && reqLen < 4)
-                {
+                if (nextDiff == -4 && reqLen < 4) {
                     nextDiff = 0;
                     forceLarge = true;
                 }
@@ -865,8 +786,7 @@ namespace __KV_PRIVATE__
 
             p = zipList + offset; // 指针重新赋值
 
-            if (*p != ZIP_END)
-            {
+            if (*p != ZIP_END) {
                 // nextDiff 为需要扩容/缩容的字节数 4 0 -4 ，> 0 时为扩容
                 // realloc时 扩/缩了nextDiff 个字节，所以此处需要减去nextDiff，用于预留的缩容/扩容
                 // intConv32(head->size) + nextDiff + reqLen
@@ -884,8 +804,7 @@ namespace __KV_PRIVATE__
                     intConv32(static_cast<int32_t>(head->tailOffset))
                         + static_cast<int32_t>(reqLen));
 
-                if (!zipEntrySafe(static_cast<off_t>(offset + reqLen), tailEntry, true))
-                {
+                if (!zipEntrySafe(static_cast<off_t>(offset + reqLen), tailEntry, true)) {
                     PRINT_ERROR("zip encode error");
                     return false;
                 }
@@ -909,14 +828,12 @@ namespace __KV_PRIVATE__
         }
 
         // 不需要删除的第一个节点，需要删除的第一个节点，需要删除的个数
-        size_t zipListDeletePrivate (const uint8_t *p, const Entry &first, size_t deleted)
-        {
+        size_t zipListDeletePrivate (const uint8_t *p, const Entry &first, size_t deleted) {
             Entry entry {};
             size_t totLen = p - first.p;
             uint32_t setTailOff;
             int nextDiff = 0;
-            if (*p != ZIP_END)
-            {
+            if (*p != ZIP_END) {
                 // 前一个节点总长度所需prevLenSize字节数 - 删除后一个节点的prevLenSize字节数
                 // 判断prevLenSize是否需要扩容/缩容
                 nextDiff =
@@ -927,8 +844,7 @@ namespace __KV_PRIVATE__
                 zipEncodePrevLenSize(first.prevLenSize, p - zipList);
                 // 设置尾部为原尾部 - 需要删除的长度
                 setTailOff = intConv32(static_cast<int32_t>(head->tailOffset)) - totLen;
-                if (!zipEntrySafe(p - zipList, entry, true))
-                {
+                if (!zipEntrySafe(p - zipList, entry, true)) {
                     PRINT_ERROR("zip encode error on offset %d", p - zipList);
                     return 0;
                 }
@@ -966,8 +882,7 @@ namespace __KV_PRIVATE__
         // 循环更新节点的prevLen
         // offset传入第一个不需要更新的节点偏移量
         // 即offset处节点的后置节点可能触发连续更新
-        bool zipCascadeUpdate (off_t offset)
-        {
+        bool zipCascadeUpdate (off_t offset) {
             constexpr uint8_t delta = 5 - 1;
             auto p = zipList + offset;
             if (*p == ZIP_END) return true;
@@ -984,10 +899,8 @@ namespace __KV_PRIVATE__
             // 移到后一个节点
             offset += prevLen;
             p = zipList + offset;
-            while (*p != ZIP_END)
-            {
-                if (!zipEntrySafe(offset, currentEntry))
-                {
+            while (*p != ZIP_END) {
+                if (!zipEntrySafe(offset, currentEntry)) {
                     PRINT_ERROR("zip encode error on offset %d", offset);
                     return false;
                 }
@@ -995,8 +908,7 @@ namespace __KV_PRIVATE__
                 if (currentEntry.prevLen == prevLen) break;
 
                 // 如果当前prevLenSize >= 上一个节点需要的prevLenSize，则不需要再更新，退出循环
-                if (currentEntry.prevLenSize >= prevLenSize)
-                {
+                if (currentEntry.prevLenSize >= prevLenSize) {
                     if (currentEntry.prevLenSize == prevLenSize)
                         zipEncodePrevLenSize(prevLen, offset);
                     else
@@ -1007,8 +919,7 @@ namespace __KV_PRIVATE__
                 }
 
                 // 如果不是头节点，并且当前节点的prevLenSize+4（即需要扩容）!= 前一个节点需要的prevLenSize，出错
-                if (currentEntry.prevLen != 0 && currentEntry.prevLenSize + delta != prevLenSize)
-                {
+                if (currentEntry.prevLen != 0 && currentEntry.prevLenSize + delta != prevLenSize) {
                     PRINT_ERROR("update prevLenSize error");
                     return false;
                 }
@@ -1025,8 +936,7 @@ namespace __KV_PRIVATE__
             if (extra == 0) return true;
 
             // 如果更新到list尾部
-            if (intConv32(static_cast<int32_t>(head->tailOffset)) == offset)
-            {
+            if (intConv32(static_cast<int32_t>(head->tailOffset)) == offset) {
                 // 如果当前节点插入的不是倒数第二个节点
                 // 如果是倒数第二个节点，扩充的为最后一个节点的长度，不影响tailOffset的指向
                 if (extra != delta)
@@ -1046,8 +956,7 @@ namespace __KV_PRIVATE__
             // 将指针移动不需要更新的节点前
             p += extra;
             // 从后往前更新
-            while (extra)
-            {
+            while (extra) {
                 currentEntry = zipEntry(prevOffset);
                 // p指向不需要更新的第一个节点
                 // prevOffset指向需要更新的最后一个节点
@@ -1075,18 +984,15 @@ namespace __KV_PRIVATE__
             return true;
         }
 
-        inline off_t zipEncodePrevLenSize5 (uint32_t len, off_t offset)
-        {
+        inline off_t zipEncodePrevLenSize5 (uint32_t len, off_t offset) {
             *(zipList + offset) = ZIP_BIG_PREV_LEN;
             *reinterpret_cast<uint32_t *>(zipList + offset + 1) =
                 intConv32(static_cast<int32_t>(len));
             return offset + 5;
         }
 
-        inline off_t zipEncodePrevLenSize (uint32_t len, off_t offset)
-        {
-            if (len < ZIP_BIG_PREV_LEN)
-            {
+        inline off_t zipEncodePrevLenSize (uint32_t len, off_t offset) {
+            if (len < ZIP_BIG_PREV_LEN) {
                 *(zipList + offset) = len;
                 return offset + 1;
             }
@@ -1094,8 +1000,7 @@ namespace __KV_PRIVATE__
                 return zipEncodePrevLenSize5(len, offset);
         }
 
-        inline off_t zipEncodeEncoding (off_t offset, uint8_t encoding, uint32_t dataSize)
-        {
+        inline off_t zipEncodeEncoding (off_t offset, uint8_t encoding, uint32_t dataSize) {
             uint8_t *p = zipList + offset;
 
             return offset + ZipListHelper::zipEncodeEncoding(p, encoding, dataSize);
@@ -1109,26 +1014,22 @@ namespace __KV_PRIVATE__
         //         offset++;
         // }
 
-        inline void zipDecodePrev (Entry &entry, off_t &offset) const noexcept
-        {
+        inline void zipDecodePrev (Entry &entry, off_t &offset) const noexcept {
             uint8_t *p = zipList + offset;
             offset += static_cast<off_t>(ZipListHelper::zipDecodePrev(entry, p));
         }
 
-        inline void zipDecodeEncoding (Entry &entry, off_t offset) const noexcept
-        {
+        inline void zipDecodeEncoding (Entry &entry, off_t offset) const noexcept {
             uint8_t *p = zipList + offset;
             ZipListHelper::zipDecodeEncoding(entry, p);
         }
 
-        inline void zipDecodeLen (Entry &entry, off_t &offset) const noexcept
-        {
+        inline void zipDecodeLen (Entry &entry, off_t &offset) const noexcept {
             uint8_t *p = zipList + offset;
             offset += static_cast<off_t>(ZipListHelper::zipDecodeLen(entry, p));
         }
 
-        inline bool zipListResize (size_t len)
-        {
+        inline bool zipListResize (size_t len) {
             // if (len < static_cast<size_t>(intConv32(static_cast<int32_t>(head->size))))
             // {
             //     PRINT_ERROR("resize length (%d) must greater than old length (%d)",
@@ -1144,13 +1045,11 @@ namespace __KV_PRIVATE__
             return true;
         }
 
-        inline void resetHead ()
-        {
+        inline void resetHead () {
             head = reinterpret_cast<ZipListHead *>(zipList);
         }
 
-        inline void zipListIncrLen (int16_t incr = 1)
-        {
+        inline void zipListIncrLen (int16_t incr = 1) {
             if (static_cast<uint16_t>(intConv16(static_cast<int16_t>(head->count)))
                 < std::numeric_limits <uint16_t>::max())
                 head->count = head->count + incr;

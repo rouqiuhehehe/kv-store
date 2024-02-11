@@ -29,12 +29,10 @@ namespace __KV_PRIVATE__
         };
         struct ListPackLzf
         {
-            void *operator new (size_t s, size_t bufLen)
-            {
+            void *operator new (size_t s, size_t bufLen) {
                 return ::operator new(sizeof(ListPackLzf) + sizeof(uint8_t) * bufLen);
             }
-            void operator delete (void *p) noexcept
-            {
+            void operator delete (void *p) noexcept {
                 ::operator delete(p);
             }
             size_t decodeSize {};
@@ -47,24 +45,49 @@ namespace __KV_PRIVATE__
             ListPackLzf *lzf;
         };
 
-        QuickListNode ()
-        {
+        QuickListNode () {
             data.listPack = new KvListPack;
         }
-        explicit QuickListNode (KvListPack *listPack)
-        {
+        explicit QuickListNode (KvListPack *listPack) {
             data.listPack = listPack;
             encoding = ENCODING_MODE::RAW;
         }
-        explicit QuickListNode (const KvListPack &listPack)
-        {
+        explicit QuickListNode (const KvListPack &listPack) {
             data.listPack = new KvListPack(listPack);
             encoding = ENCODING_MODE::RAW;
         }
-        ~QuickListNode () noexcept
-        {
-            switch (encoding)
-            {
+        QuickListNode (const QuickListNode &r) {
+            operator=(r);
+        }
+
+        QuickListNode &operator= (const QuickListNode &r) {
+            if (this == &r) return *this;
+
+            encoding = r.encoding;
+            containerType = r.containerType;
+            recompress = r.recompress;
+            switch (encoding) {
+                case ENCODING_MODE::RAW:
+                    if (data.listPack)
+                        *data.listPack = *r.data.listPack;
+                    else
+                        data.listPack = new KvListPack(*r.data.listPack);
+                    break;
+                case ENCODING_MODE::LZF:
+                    delete data.lzf;
+                    data.lzf = new(data.lzf->size) ListPackLzf;
+                    data.lzf->decodeSize = r.data.lzf->decodeSize;
+                    data.lzf->size = r.data.lzf->size;
+                    memcpy(data.lzf->compress, r.data.lzf->compress, data.lzf->size);
+                    break;
+                default:
+                    KV_ASSERT(false);
+                    unreachable();
+            }
+            return *this;
+        }
+        ~QuickListNode () noexcept {
+            switch (encoding) {
                 case ENCODING_MODE::RAW:
                     delete data.listPack;
                     break;
@@ -74,15 +97,13 @@ namespace __KV_PRIVATE__
             }
         }
 
-        inline bool compressForRecompress ()
-        {
+        inline bool compressForRecompress () {
             if (recompress)
                 return compress();
 
             return false;
         }
-        bool compress ()
-        {
+        bool compress () {
             // 头尾节点不需要压缩
             // if (!prev || !next) return false;
             if (encoding != ENCODING_MODE::RAW) return false;
@@ -101,8 +122,7 @@ namespace __KV_PRIVATE__
                 totalSize
             );
             // 如果压缩失败，或者压缩字节过少（少于8字节）
-            if (lzf->size == 0 || lzf->size + MIN_COMPRESS_IMPROVE >= totalSize)
-            {
+            if (lzf->size == 0 || lzf->size + MIN_COMPRESS_IMPROVE >= totalSize) {
                 delete lzf;
                 return false;
             }
@@ -123,20 +143,18 @@ namespace __KV_PRIVATE__
             return true;
         }
 
-        bool decompress ()
-        {
+        bool decompress () {
             if (encoding != ENCODING_MODE::LZF) return false;
 
             recompress = false;
-            uint8_t *decompressed =
+            auto *decompressed =
                 static_cast<uint8_t *>(malloc(data.lzf->decodeSize + LP_HEAD_SIZE));
             if (lzf_decompress(
                 data.lzf->compress + LP_HEAD_SIZE,
                 data.lzf->size,
                 decompressed + LP_HEAD_SIZE,
                 data.lzf->decodeSize
-            ) == 0)
-            {
+            ) == 0) {
                 delete decompressed;
                 return false;
             }
@@ -151,10 +169,8 @@ namespace __KV_PRIVATE__
 
         inline bool isPlainNode () const { return containerType == CONTAINER_TYPE::PLAIN; }
 
-        inline bool decompressForUse ()
-        {
-            if (encoding == ENCODING_MODE::LZF)
-            {
+        inline bool decompressForUse () {
+            if (encoding == ENCODING_MODE::LZF) {
                 recompress = true;
                 return decompress();
             }
@@ -187,29 +203,23 @@ namespace __KV_PRIVATE__
                 node ? (node->data.listPack->getListPackPtr() + offset) : nullptr
             ), node(node) {}
 
-            bool operator== (const Iterator &it) const noexcept
-            {
+            bool operator== (const Iterator &it) const noexcept {
                 return node == it.node && IteratorBase::operator==(it);
             }
 
-            bool operator!= (const Iterator &it) const noexcept
-            {
+            bool operator!= (const Iterator &it) const noexcept {
                 return !(*this == it);
             }
 
-            explicit operator bool () const noexcept override
-            {
+            explicit operator bool () const noexcept override {
                 return node && node->encoding == QuickListNode::ENCODING_MODE::RAW
                     && IteratorBase::operator bool();
             }
 
-            Iterator &operator++ () override
-            {
+            Iterator &operator++ () override {
                 ListPackHelper::Iterator::operator++();
-                if (!p)
-                {
-                    if (node->next)
-                    {
+                if (!p) {
+                    if (node->next) {
                         node = node->next;
                         p = node->data.listPack->getListPackPtr() + LP_HEAD_SIZE;
                         getVal();
@@ -226,13 +236,11 @@ namespace __KV_PRIVATE__
                 ++(*this);
                 return old;
             }
-            const ListPackHelper::IteratorDataType &operator* () const noexcept override
-            {
+            const ListPackHelper::IteratorDataType &operator* () const noexcept override {
                 node->decompressForUse();
                 return IteratorBase::operator*();
             }
-            const ListPackHelper::IteratorDataType *operator-> () const noexcept override
-            {
+            const ListPackHelper::IteratorDataType *operator-> () const noexcept override {
                 node->decompressForUse();
                 return IteratorBase::operator->();
             }
@@ -250,28 +258,22 @@ namespace __KV_PRIVATE__
                 node ? node->data.listPack->getListPackPtr() : nullptr,
                 node ? (node->data.listPack->getListPackPtr() + offset) : nullptr
             ), node(node) {}
-            bool operator== (const ReverseIterator &it) const noexcept
-            {
+            bool operator== (const ReverseIterator &it) const noexcept {
                 return node == it.node && IteratorBase::operator==(it);
             }
 
-            bool operator!= (const ReverseIterator &it) const noexcept
-            {
+            bool operator!= (const ReverseIterator &it) const noexcept {
                 return !(*this == it);
             }
-            explicit operator bool () const noexcept override
-            {
+            explicit operator bool () const noexcept override {
                 return node && node->encoding == QuickListNode::ENCODING_MODE::RAW
                     && IteratorBase::operator bool();
             }
 
-            ReverseIterator &operator++ () override
-            {
+            ReverseIterator &operator++ () override {
                 ListPackHelper::ReverseIterator::operator++();
-                if (!p)
-                {
-                    if (node->prev)
-                    {
+                if (!p) {
+                    if (node->prev) {
                         node = node->prev;
                         p = node->data.listPack->getListPackPtr()
                             + node->data.listPack->getLastBitOffset();
@@ -290,13 +292,11 @@ namespace __KV_PRIVATE__
                 ++(*this);
                 return old;
             }
-            const ListPackHelper::IteratorDataType &operator* () const noexcept override
-            {
+            const ListPackHelper::IteratorDataType &operator* () const noexcept override {
                 node->decompressForUse();
                 return IteratorBase::operator*();
             }
-            const ListPackHelper::IteratorDataType *operator-> () const noexcept override
-            {
+            const ListPackHelper::IteratorDataType *operator-> () const noexcept override {
                 node->decompressForUse();
                 return IteratorBase::operator->();
             }
@@ -305,8 +305,7 @@ namespace __KV_PRIVATE__
             QuickListNode *node {};
         };
 
-        static inline bool nodeAllowInsert (const QuickListNode *node, size_t valSize) noexcept
-        {
+        static inline bool nodeAllowInsert (const QuickListNode *node, size_t valSize) noexcept {
             if (unlikely(!node) || unlikely(node->isPlainNode())
                 || unlikely(isLargeElement(valSize)))
                 return false;
@@ -319,8 +318,7 @@ namespace __KV_PRIVATE__
             return true;
         }
 
-        static inline bool nodeAllowMerge (const QuickListNode *a, const QuickListNode *b) noexcept
-        {
+        static inline bool nodeAllowMerge (const QuickListNode *a, const QuickListNode *b) noexcept {
             if (!a || !b) return false;
             if (unlikely(a->isPlainNode() || b->isPlainNode())) return false;
             // 总长度 = a的listPack长度 + b的listPack长度 - b的listPack头长 和 LP_END 长度
@@ -333,11 +331,9 @@ namespace __KV_PRIVATE__
         }
 
         // 是否超出限制
-        static inline bool nodeExceedsLimit (size_t newSize, uint16_t newCount)
-        {
+        static inline bool nodeExceedsLimit (size_t newSize, uint16_t newCount) {
             ListMaxListPackSize listMaxListPackSize = KvConfig::getConfig().listMaxListPackSize;
-            switch (listMaxListPackSize.type)
-            {
+            switch (listMaxListPackSize.type) {
                 case ListMaxListPackSizeType::TYPE_NUM:
                     if (!checkSizeMeetsSafetyLimit(newSize)) return false;
                     return newCount > listMaxListPackSize.number;
@@ -349,21 +345,18 @@ namespace __KV_PRIVATE__
             unreachable();
         }
 
-        static inline bool checkSizeMeetsSafetyLimit (size_t size)
-        {
+        static inline bool checkSizeMeetsSafetyLimit (size_t size) {
             return size <= SIZE_SAFETY_LIMIT;
         }
 
-        static inline bool isLargeElement (size_t size) noexcept
-        {
+        static inline bool isLargeElement (size_t size) noexcept {
             return size >= PACKED_THRESHOLD;
         }
 
         // 检查当前长度是否需要压缩node
         // 判断config listCompressDepth不等于0 并且 当前node数量 >  listCompressDepth * 2
         // 配置为双端不需要压缩的节点数
-        static inline bool needCompress (size_t len)
-        {
+        static inline bool needCompress (size_t len) {
             auto listCompressDepth = KvConfig::getConfig().listCompressDepth;
             return listCompressDepth != 0 && len > listCompressDepth * 2;
         }
@@ -375,16 +368,14 @@ namespace __KV_PRIVATE__
             T &&val,
             size_t size,
             INSERT_POSITION pos
-        )
-        {
-            switch (pos)
-            {
+        ) {
+            switch (pos) {
                 case INSERT_POSITION::BEFORE:
                     break;
                 case INSERT_POSITION::AFTER:
                     size_t entrySize;
-                    listPack->listPackGetValue(listPack->getListPackPtr() + offset, &entrySize);
-                    offset += entrySize;
+                    KvListPack::listPackGetValue(listPack->getListPackPtr() + offset, &entrySize);
+                    offset += static_cast<off_t>(entrySize);
                     break;
             }
 
@@ -407,12 +398,77 @@ namespace __KV_PRIVATE__
     class QuickListBase : protected QuickListHelper
     {
     public:
-        ~QuickListBase () noexcept
-        {
+        QuickListBase () = default;
+        explicit QuickListBase (KvListPack *listPack) {
+            auto *node = new QuickListNode(listPack);
+            head = tail = node;
+            len = 1;
+            count = listPack->size();
+        }
+        QuickListBase (const QuickListBase &r) {
+            operator=(r);
+        }
+
+        QuickListBase (QuickListBase &&r) noexcept {
+            operator=(std::move(r));
+        }
+
+        QuickListBase &operator= (const QuickListBase &r) {
+            if (this == &r) return *this;
+            QuickListNode *node = head;
+            QuickListNode *cpNode = r.head;
+
+            int diff = static_cast<int>(len - r.len);
+            if (diff > 0) {
+                // 当前长度比 需拷贝的QuickListBase长，需删除多余ListPack
+                while (cpNode) {
+                    *node = *cpNode;
+                    node = node->next;
+                    cpNode = cpNode->next;
+                }
+                while (node) {
+                    quickListDelNode(node);
+                    node = node->next;
+                }
+            }
+            else {
+                // 当前长度比 需拷贝的QuickListBase短，需要添加node
+                while (node) {
+                    *node = *cpNode;
+                    node = node->next;
+                    cpNode = cpNode->next;
+                }
+                QuickListNode *newNode;
+                while (cpNode) {
+                    newNode = new QuickListNode(*cpNode);
+                    quickListInsertNode(newNode, tail, INSERT_POSITION::AFTER);
+                    cpNode = cpNode->next;
+                }
+            }
+
+            len = r.len;
+            count = r.count;
+            return *this;
+        }
+
+        QuickListBase &operator= (QuickListBase &&r) noexcept {
+            if (this == &r) return *this;
+
+            head = r.head;
+            tail = r.tail;
+            len = r.len;
+            count = r.count;
+
+            r.tail = nullptr;
+            r.head = nullptr;
+            r.len = 0;
+            r.count = 0;
+            return *this;
+        }
+        ~QuickListBase () noexcept {
             auto *cur = head;
             QuickListNode *next;
-            while (len--)
-            {
+            while (len--) {
                 next = cur->next;
                 delete cur;
                 cur = next;
@@ -420,16 +476,42 @@ namespace __KV_PRIVATE__
         }
 
     protected:
-        RetType quickListPushFront (const StringType &s)
-        {
+        inline void popFront () {
+            head->data.listPack->popFront();
+            count--;
+            if (head->data.listPack->empty())
+                quickListDelNode(head);
+        }
+        inline void popBack () {
+            tail->data.listPack->popBack();
+            count--;
+            if (tail->data.listPack->empty())
+                quickListDelNode(tail);
+        }
+        inline KvListPack::IteratorDataType front () const {
+            if (empty()) {
+                KvListPack::IteratorDataType data {};
+                data.mode = __KV_PRIVATE__::ListPackHelper::DataTypeEnum::ERROR;
+                return data;
+            }
+            return head->data.listPack->front();
+        }
+        inline KvListPack::IteratorDataType back () const {
+            if (empty()) {
+                KvListPack::IteratorDataType data {};
+                data.mode = __KV_PRIVATE__::ListPackHelper::DataTypeEnum::ERROR;
+                return data;
+            }
+            return head->data.listPack->back();
+        }
+        RetType quickListPushFront (const StringType &s) {
             RetType ret;
             if (quickListCheckAndInsertPlainNode(s, head, INSERT_POSITION::BEFORE, ret))
                 return ret;
 
             if (likely(nodeAllowInsert(head, s.size())))
                 head->data.listPack->pushFront(s);
-            else
-            {
+            else {
                 auto *node = new QuickListNode;
                 node->data.listPack->pushFront(s);
                 quickListInsertNode(node, head, INSERT_POSITION::BEFORE);
@@ -442,13 +524,11 @@ namespace __KV_PRIVATE__
         }
         template <class T, class = typename std::enable_if <std::is_integral <typename std::remove_reference <
             T>::type>::value, T>::type>
-        RetType quickListPushFront (T val)
-        {
+        RetType quickListPushFront (T val) {
             RetType ret;
             if (likely(nodeAllowInsert(head, sizeof(T))))
                 head->data.listPack->pushFront(val);
-            else
-            {
+            else {
                 auto *node = new QuickListNode;
                 node->data.listPack->pushFront(val);
                 quickListInsertNode(node, head, INSERT_POSITION::BEFORE);
@@ -460,8 +540,7 @@ namespace __KV_PRIVATE__
             return ret;
         }
 
-        RetType quickListPushBack (const StringType &s)
-        {
+        RetType quickListPushBack (const StringType &s) {
             RetType ret;
             if (quickListCheckAndInsertPlainNode(s, tail, INSERT_POSITION::AFTER, ret))
                 return ret;
@@ -470,8 +549,7 @@ namespace __KV_PRIVATE__
             if (likely(nodeAllowInsert(tail, s.size())))
                 entrySize =
                     tail->data.listPack->listPackInsert(tail->data.listPack->getLastBitOffset(), s);
-            else
-            {
+            else {
                 auto *node = new QuickListNode;
                 entrySize =
                     node->data.listPack->listPackInsert(LP_HEAD_SIZE, s);
@@ -480,21 +558,19 @@ namespace __KV_PRIVATE__
 
             count++;
             ret.first = tail;
-            ret.second = tail->data.listPack->getLastBitOffset() - entrySize;
+            ret.second = tail->data.listPack->getLastBitOffset() - static_cast<off_t>(entrySize);
             return ret;
         }
 
         template <class T, class = typename std::enable_if <std::is_integral <typename std::remove_reference <
             T>::type>::value, T>::type>
-        RetType quickListPushBack (T val)
-        {
+        RetType quickListPushBack (T val) {
             RetType ret;
             size_t entrySize;
             if (likely(nodeAllowInsert(tail, sizeof(T))))
                 entrySize = tail->data.listPack->
                     listPackInsert(tail->data.listPack->getLastBitOffset(), val);
-            else
-            {
+            else {
                 auto *node = new QuickListNode;
                 entrySize = node->data.listPack->listPackInsert(LP_HEAD_SIZE, val);
                 quickListInsertNode(node, tail, INSERT_POSITION::AFTER);
@@ -502,13 +578,12 @@ namespace __KV_PRIVATE__
 
             count++;
             ret.first = tail;
-            ret.second = tail->data.listPack->getLastBitOffset() - entrySize;
+            ret.second = tail->data.listPack->getLastBitOffset() - static_cast<off_t>(entrySize);
             return ret;
         }
 
         template <class T>
-        RetType quickListInsert (const Iterator &posIt, T &&val, size_t size, INSERT_POSITION pos)
-        {
+        RetType quickListInsert (const Iterator &posIt, T &&val, size_t size, INSERT_POSITION pos) {
             bool full = false;
             bool isTail = false;
             bool isHead = false;
@@ -520,8 +595,7 @@ namespace __KV_PRIVATE__
             auto *node = posIt.node;
             QuickListNode *newNode;
             // 如果没有node节点
-            if (unlikely(!posIt.p))
-            {
+            if (unlikely(!posIt.p)) {
                 PRINT_WARNING("no position iterator, so we create a new node and insert in tail");
                 if (std::is_integral <typename std::remove_reference <
                     T>::type>::value)
@@ -531,27 +605,23 @@ namespace __KV_PRIVATE__
             }
 
             // 如果node节点已满
-            if (!nodeAllowInsert(posIt.node, size))
-            {
+            if (!nodeAllowInsert(posIt.node, size)) {
                 PRINT_DEBUG("current node is full with count %d, with size %d",
                     posIt.node->data.listPack->size(),
                     posIt.node->data.listPack->listPackGetHeadTotalSize());
                 full = true;
             }
 
-            switch (pos)
-            {
+            switch (pos) {
                 case INSERT_POSITION::BEFORE:
                     // 如果插入的是当前entry的第一个节点之前，或者当前entry的头部
                     if (posIt.p == posIt.node->data.listPack->getListPackPtr() + LP_HEAD_SIZE
                         || posIt.p + KvListPack::listPackDecodingBackLen(posIt.p, nullptr)
-                            == posIt.node->data.listPack->getListPackPtr() + LP_HEAD_SIZE)
-                    {
+                            == posIt.node->data.listPack->getListPackPtr() + LP_HEAD_SIZE) {
                         PRINT_DEBUG("insert at head in listPack, listPack : %p",
                             posIt.node->data.listPack->getListPackPtr());
                         isHead = true;
-                        if (nodeAllowInsert(posIt.node->prev, size))
-                        {
+                        if (nodeAllowInsert(posIt.node->prev, size)) {
                             PRINT_DEBUG("prev node is available, node : %p", posIt.node->prev);
                             availPrev = true;
                         }
@@ -559,13 +629,11 @@ namespace __KV_PRIVATE__
                     break;
                 case INSERT_POSITION::AFTER:
                     // 如果插入的是最后，或者是倒数第二个节点之后
-                    if (*posIt.p == LP_END || *(posIt.p + posIt.entrySize) == LP_END)
-                    {
+                    if (*posIt.p == LP_END || *(posIt.p + posIt.entrySize) == LP_END) {
                         PRINT_DEBUG("insert at tail in listPack, listPack : %p",
                             posIt.node->data.listPack->getListPackPtr());
                         isTail = true;
-                        if (nodeAllowInsert(posIt.node->next, size))
-                        {
+                        if (nodeAllowInsert(posIt.node->next, size)) {
                             PRINT_DEBUG("next node is available, node : %p", posIt.node->next);
                             availNext = true;
                         }
@@ -573,14 +641,12 @@ namespace __KV_PRIVATE__
                     break;
             }
             // 如果新节点是plain节点
-            if (unlikely(isLargeElement(size)))
-            {
+            if (unlikely(isLargeElement(size))) {
                 // 如果当前节点是Plain节点，或者插入的是最后一个节点之后，或者插入的是第一个节点之前
                 if (posIt.node->isPlainNode() || isTail || isHead)
                     // 大节点只可能是字符串
                     quickListInsertPlainNode(StringType(val, size), posIt.node, pos, ret);
-                else
-                {
+                else {
                     posIt.node->decompressForUse();
                     newNode = quickListSplitNode(posIt, pos);
                     node = quickListCreatePlainNode(StringType(val, size));
@@ -594,16 +660,14 @@ namespace __KV_PRIVATE__
             }
 
             // 如果没满
-            if (!full)
-            {
+            if (!full) {
                 PRINT_DEBUG("node not full, insert into this %s current position",
                     pos == INSERT_POSITION::BEFORE ? "before" : "after");
                 node->decompressForUse();
                 offset = checkTypeAndListPackPush(listPack, offset, val, size, pos);
                 node->compressForRecompress();
             }
-            else if ((isHead && availPrev) || (isTail && availNext))
-            {
+            else if ((isHead && availPrev) || (isTail && availNext)) {
                 // 如果满了，但是插入的是头/尾 并且前/后一个节点是可插入的
                 PRINT_DEBUG("node is full, but %s node is not full,  insert into this %s node %s",
                     pos == INSERT_POSITION::BEFORE ? "before" : "after",
@@ -611,8 +675,7 @@ namespace __KV_PRIVATE__
                     pos == INSERT_POSITION::BEFORE ? "tail" : "head");
 
                 node->compressForRecompress();
-                switch (pos)
-                {
+                switch (pos) {
                     case INSERT_POSITION::BEFORE:
                         node = node->prev;
                         offset = node->data.listPack->getLastBitOffset();
@@ -626,8 +689,7 @@ namespace __KV_PRIVATE__
                 checkTypeAndListPackPush(node->data.listPack, offset, val, size, pos);
                 node->compressForRecompress();
             }
-            else if (isHead || isTail)
-            {
+            else if (isHead || isTail) {
                 // 如果满了，并且添加的是节点的头/尾部，并且前/后一个节点处于不可插入状态
                 // 因为上面已经判断了isHead && availPrev，所以此处不需要判断 isHead && !availPrev
                 PRINT_DEBUG("node is full, and %s node is also full, insert new node",
@@ -645,15 +707,13 @@ namespace __KV_PRIVATE__
                 node = newNode;
                 offset = LP_HEAD_SIZE;
             }
-            else
-            {
+            else {
                 // 如果当前节点是满的，并且插入的是中间位置，需要分割节点
                 PRINT_DEBUG("node is full, and insert position is mid, split node");
                 node->decompressForUse();
                 newNode = quickListSplitNode(posIt, pos);
                 listPack = newNode->data.listPack;
-                switch (pos)
-                {
+                switch (pos) {
                     case INSERT_POSITION::BEFORE:
                         offset = listPack->getLastBitOffset();
                         break;
@@ -682,14 +742,12 @@ namespace __KV_PRIVATE__
         }
 
         template <class T>
-        RetType quickListFind (T &&val) const
-        {
+        RetType quickListFind (T &&val) const {
             if (empty())
                 return { nullptr, 0 };
 
             auto *cur = head;
-            while (cur)
-            {
+            while (cur) {
                 cur->decompressForUse();
                 auto it = cur->data.listPack->find(val);
                 if (it)
@@ -700,18 +758,33 @@ namespace __KV_PRIVATE__
             return { nullptr, 0 };
         }
 
-        size_t quickListErase (const Iterator &begin, size_t num)
-        {
+        template <class T>
+        RetType quickListFindReverse (T &&val) const {
+            if (empty())
+                return { nullptr, 0 };
+
+            auto *cur = head;
+            while (cur) {
+                cur->decompressForUse();
+                auto it = cur->data.listPack->findReverse(val);
+                if (it)
+                    return { cur, it.p - cur->data.listPack->getListPackPtr() };
+                cur = cur->next;
+            }
+
+            return { nullptr, 0 };
+        }
+
+        Iterator quickListErase (const Iterator &begin, size_t num) {
+            if (!begin || !num) return end();
             auto it = begin;
             auto *listPack = it.node->data.listPack;
             auto *curNode = it.node;
             size_t deleted = 0, curDel = 0;
             auto beginOff = it.p - listPack->getListPackPtr();
-            while (num && it.p)
-            {
+            while (num && it.p) {
                 uint16_t ele = listPack->listPackGetHeadElementsSize();
-                if (beginOff == LP_HEAD_SIZE && num >= ele)
-                {
+                if (beginOff == LP_HEAD_SIZE && num >= ele) {
                     auto *nxtNode = curNode->next;
                     quickListDelNode(curNode);
                     num -= ele;
@@ -719,8 +792,7 @@ namespace __KV_PRIVATE__
                     if (!nxtNode) break;
                     it = Iterator(nxtNode, LP_HEAD_SIZE);
                 }
-                else
-                {
+                else {
                     curDel = 0;
                     while (++curDel < num && (++it).node == curNode);
                     listPack->listPackDeleteSafe(
@@ -743,21 +815,19 @@ namespace __KV_PRIVATE__
                 listPack = curNode->data.listPack;
             }
 
-            return deleted;
+            return it;
         }
 
-        size_t quickListErase (const ReverseIterator &rbegin, size_t num)
-        {
+        ReverseIterator quickListErase (const ReverseIterator &rbegin, size_t num) {
+            if (!rbegin || !num) return rend();
             auto it = rbegin;
             auto *listPack = it.node->data.listPack;
             auto *curNode = it.node;
-            size_t deleted = 0, curDel = 0;
+            size_t deleted = 0, curDel;
             auto endOff = it.p - listPack->getListPackPtr();
-            while (num && it.p)
-            {
+            while (num && it.p) {
                 uint16_t ele = listPack->listPackGetHeadElementsSize();
-                if (*(listPack->getListPackPtr() + endOff) == LP_END && num >= ele)
-                {
+                if (*(listPack->getListPackPtr() + endOff) == LP_END && num >= ele) {
                     auto *prevNode = curNode->prev;
                     quickListDelNode(curNode);
                     num -= ele;
@@ -765,8 +835,7 @@ namespace __KV_PRIVATE__
                     if (!prevNode) break;
                     it = ReverseIterator(prevNode, prevNode->data.listPack->getLastBitOffset());
                 }
-                else
-                {
+                else {
                     curDel = 0;
                     while (++curDel < num && (++it).node == curNode);
                     listPack->listPackDeleteSafe(
@@ -789,26 +858,22 @@ namespace __KV_PRIVATE__
                 endOff = listPack->getLastBitOffset();
             }
 
-            return deleted;
+            return it;
         }
 
-        inline Iterator begin () const noexcept
-        {
+        inline Iterator begin () const noexcept {
             KV_ASSERT(head->encoding == QuickListNode::ENCODING_MODE::RAW && !head->recompress);
-            return Iterator(head, LP_HEAD_SIZE);
+            return { head, LP_HEAD_SIZE };
         }
-        inline Iterator end () const noexcept
-        {
-            return Iterator(nullptr, 0);
+        inline Iterator end () const noexcept {
+            return { nullptr, 0 };
         }
-        inline ReverseIterator rbegin () const noexcept
-        {
+        inline ReverseIterator rbegin () const noexcept {
             KV_ASSERT(tail->encoding == QuickListNode::ENCODING_MODE::RAW && !tail->recompress);
-            return ReverseIterator(tail, tail->data.listPack->getLastBitOffset());
+            return { tail, tail->data.listPack->getLastBitOffset() };
         }
-        inline ReverseIterator rend () const noexcept
-        {
-            return ReverseIterator(nullptr, 0);
+        inline ReverseIterator rend () const noexcept {
+            return { nullptr, 0 };
         }
         inline size_t size () const noexcept { return count; }
         inline bool empty () const noexcept { return !count; }
@@ -817,14 +882,11 @@ namespace __KV_PRIVATE__
             QuickListNode *newNode,
             QuickListNode *posNode,
             INSERT_POSITION pos
-        )
-        {
-            switch (pos)
-            {
+        ) {
+            switch (pos) {
                 case INSERT_POSITION::BEFORE:
                     newNode->next = posNode;
-                    if (posNode)
-                    {
+                    if (posNode) {
                         newNode->prev = posNode->prev;
                         if (posNode->prev) posNode->prev->next = newNode;
                         if (head == posNode) head = newNode;
@@ -833,8 +895,7 @@ namespace __KV_PRIVATE__
                     break;
                 case INSERT_POSITION::AFTER:
                     newNode->prev = posNode;
-                    if (posNode)
-                    {
+                    if (posNode) {
                         newNode->next = posNode->next;
                         if (posNode->next) posNode->next->prev = newNode;
                         if (tail == posNode) tail = newNode;
@@ -856,21 +917,18 @@ namespace __KV_PRIVATE__
          *   - (center->prev, center) 检查前节点和当前节点能否合并
          *   - (center, center->next) 检查当前节点和后节点能否合并
          */
-        void quickMergeNodes (QuickListNode *centerNode)
-        {
+        void quickMergeNodes (QuickListNode *centerNode) {
             PRINT_DEBUG("check nodes need to be merged");
             QuickListNode *prev, *prevPrev, *next, *nextNext;
             prev = prevPrev = next = nextNext = nullptr;
 
-            if (centerNode->prev)
-            {
+            if (centerNode->prev) {
                 prev = centerNode->prev;
                 if (prev->prev)
                     prevPrev = prev->prev;
             }
 
-            if (centerNode->next)
-            {
+            if (centerNode->next) {
                 next = centerNode->next;
                 if (next->next)
                     nextNext = next->next;
@@ -888,8 +946,7 @@ namespace __KV_PRIVATE__
                 quickListListPackMerge(centerNode, next);
         }
         // a merge b
-        void quickListListPackMerge (QuickListNode *a, QuickListNode *b)
-        {
+        void quickListListPackMerge (QuickListNode *a, QuickListNode *b) {
             a->decompress();
             b->decompress();
             PRINT_DEBUG("merge a : %p, b : %p",
@@ -904,8 +961,7 @@ namespace __KV_PRIVATE__
             quickListNodeCompress(a);
         }
 
-        void quickListDelNode (QuickListNode *node)
-        {
+        void quickListDelNode (QuickListNode *node) {
             if (node->next)
                 node->next->prev = node->prev;
             if (node->prev)
@@ -922,8 +978,7 @@ namespace __KV_PRIVATE__
             delete node;
         }
 
-        inline QuickListNode *quickListSplitNode (const Iterator &posIt, INSERT_POSITION pos) const
-        {
+        static inline QuickListNode *quickListSplitNode (const Iterator &posIt, INSERT_POSITION pos) {
             auto *newNode = new QuickListNode(*posIt.node->data.listPack);
             auto *listPack = posIt.node->data.listPack;
             off_t begin = LP_HEAD_SIZE;
@@ -939,8 +994,7 @@ namespace __KV_PRIVATE__
             if (it != posIt)
                 while (++it != posIt) num++;
 
-            switch (pos)
-            {
+            switch (pos) {
                 case INSERT_POSITION::BEFORE:
                     listPack->listPackDeleteSafe(begin, splitPos, num);
                     num = newNode->data.listPack->listPackGetHeadElementsSize() - num;
@@ -962,8 +1016,7 @@ namespace __KV_PRIVATE__
                 newNode->data.listPack->listPackGetHeadElementsSize());
             return newNode;
         }
-        inline bool quickListNodeCompress (QuickListNode *node) const
-        {
+        inline bool quickListNodeCompress (QuickListNode *node) const {
             // 如果是暂时解压的节点，直接压缩
             if (node->recompress)
                 return node->compress();
@@ -971,8 +1024,7 @@ namespace __KV_PRIVATE__
             else
                 return quickListCompress(node);
         }
-        inline bool quickListCompress (QuickListNode *node) const
-        {
+        inline bool quickListCompress (QuickListNode *node) const {
             // 此处做了长度检查，所以下方指针一定不为nullptr
             if (!len || !needCompress(len)) return false;
             KV_ASSERT(!head->recompress && !tail->recompress);
@@ -983,8 +1035,7 @@ namespace __KV_PRIVATE__
             bool nodeNeedCompress = true;
             auto listCompressDepth = KvConfig::getConfig().listCompressDepth;
             // 双端查找，通过配置查找不需要压缩的节点并解压
-            while (depth++ < listCompressDepth)
-            {
+            while (depth++ < listCompressDepth) {
                 forward->decompress();
                 reverse->decompress();
                 if (forward == node || reverse == node) nodeNeedCompress = false;
@@ -1005,10 +1056,8 @@ namespace __KV_PRIVATE__
             QuickListNode *posNode,
             INSERT_POSITION pos,
             RetType &ret
-        )
-        {
-            if (unlikely(isLargeElement(s.size())))
-            {
+        ) {
+            if (unlikely(isLargeElement(s.size()))) {
                 quickListInsertPlainNode(s, posNode, pos, ret);
                 return true;
             }
@@ -1021,16 +1070,14 @@ namespace __KV_PRIVATE__
             QuickListNode *posNode,
             INSERT_POSITION pos,
             RetType &ret
-        )
-        {
+        ) {
             auto *node = quickListCreatePlainNode(s);
             quickListInsertNode(node, posNode, pos);
             ret.first = node;
             ret.second = LP_HEAD_SIZE;
         }
 
-        static inline QuickListNode *quickListCreatePlainNode (const StringType &s)
-        {
+        static inline QuickListNode *quickListCreatePlainNode (const StringType &s) {
             auto *node = new QuickListNode;
             node->containerType = QuickListNode::CONTAINER_TYPE::PLAIN;
             node->data.listPack->pushBack(s);

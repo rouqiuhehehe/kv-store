@@ -19,7 +19,7 @@
 #define GET_ENUM_UINT64(v) static_cast<uint64_t>(v)
 #define GET_ENUM_INT(v) static_cast<int>(v)
 #define CREATE_CONFIG_ADD_MAP_COMMON(name) \
-        configParseMap[#name] = &(name);  \
+        configParseMap.emplace(#name, &(name));  \
         (name).getHandler().init()
 
 #define CREATE_NUMERIC_CONFIG_CUSTOM(Class, name, flags, numericType, defaultValue, configAddr, min, max) \
@@ -76,6 +76,7 @@ struct KvConfigFields // NOLINT
     StringType logFile; // 日志路径
     int logLevel; // 日志等级
     uint32_t databases; // 数据库数量，目前只支持了一个
+    int hz; // 循环事件触发频率
     uint32_t timeout; // tcp连接闲置N秒后关闭，0为不开启
     bool protectedMode; // 是否开启保护模式
     StringType requirePass; // 密码
@@ -85,6 +86,13 @@ struct KvConfigFields // NOLINT
 
     uint64_t hashMaxListPackEntries; // hash命令 允许的最大条目数
     uint64_t hashMaxListPackValue; // hash命令 允许单个条目数的最大占用字节数
+
+    uint64_t setMaxIntSetEntries; // set 命令 intSet允许的最大条目数
+    uint64_t setMaxListPackEntries; // set 命令 listPack允许的最大条目数
+    uint64_t setMaxListPackValue; // set 命令 listPack允许单个entry的最大字节数
+
+    uint64_t zsetMaxListPackEntries; // zset 命令 listPack允许的最大条目数
+    uint64_t zsetMaxListPackValue; // zset 命令 listPack允许单个entry的最大字节数
 };
 
 namespace __KV_PRIVATE__
@@ -214,11 +222,10 @@ namespace __KV_PRIVATE__
         inline bool operator== (int v) const noexcept { return val == v; }
         inline bool operator!= (int v) const noexcept { return !(val == v); } // NOLINT
         inline bool operator== (const StringType &n) const noexcept { return name == n; }
-        inline bool operator!= (const StringType &n) const noexcept
-        {
+        inline bool operator!= (const StringType &n) const noexcept {
             return !(name == n);
         } // NOLINT
-        StringType name{};
+        StringType name {};
         int val = ENUM_SET_NIL;
     };
 
@@ -294,8 +301,7 @@ namespace __KV_PRIVATE__
             T *value
         )
             : numericType(numericType),
-              defaultValue(defaultValue)
-        {
+              defaultValue(defaultValue) {
             memcpy(&configValue, &value, sizeof(T *));
         }
         union
@@ -422,10 +428,8 @@ namespace __KV_PRIVATE__
         ConfigDataHandler handler;
     };
 
-    inline void *ConfigDataHandler::getBase () const noexcept
-    {
-        switch (base->type)
-        {
+    inline void *ConfigDataHandler::getBase () const noexcept {
+        switch (base->type) {
             case ConfigType::BOOL_CONFIG:
                 return base->data.yesno.configValue;
             case ConfigType::NUMERIC_CONFIG:
@@ -445,11 +449,9 @@ namespace __KV_PRIVATE__
             unsigned long long max
         )
             : ConfigDataHandler(base), min(min), max(max) {}
-        void init () const noexcept override
-        {
+        void init () const noexcept override {
             // NUMERIC_ASSIGN_DEFAULT_VALUE;
-            switch (base->data.numeric.numericType)
-            {
+            switch (base->data.numeric.numericType) {
                 case NumericType::NUMERIC_TYPE_INT:
                     *base->data.numeric.configValue.i =
                         static_cast<int>(base->data.numeric.defaultValue);
@@ -491,8 +493,7 @@ namespace __KV_PRIVATE__
                     break;
             }
         }
-        ReturnNum set (const StringType &it) const noexcept override
-        {
+        ReturnNum set (const StringType &it) const noexcept override {
             long long data, oldValue;
             if (!isValid(it, &data))
                 return ReturnNum::FAILURE;
@@ -504,19 +505,16 @@ namespace __KV_PRIVATE__
             NUMERIC_SET_VALUE(data);
             return ReturnNum::SUCCESS;
         }
-        StringType get () const noexcept override
-        {
+        StringType get () const noexcept override {
             unsigned long long oldValue;
             NUMERIC_GET_VALUE(&oldValue);
             return std::to_string(oldValue);
         }
 
     protected:
-        virtual bool isValid (const StringType &it, long long *data) const noexcept
-        {
+        virtual bool isValid (const StringType &it, long long *data) const noexcept {
             bool success = Utils::StringHelper::stringIsLL(it, data);
-            if (!success)
-            {
+            if (!success) {
                 PRINT_ERROR("check the value in %s : %s, must be number",
                     base->name.c_str(),
                     it.c_str());
@@ -533,8 +531,7 @@ namespace __KV_PRIVATE__
             else
                 success =
                     *data < static_cast<long long>(min) || *data > static_cast<long long>(max);
-            if (success)
-            {
+            if (success) {
                 PRINT_ERROR("check the value in %s : %s , must in min(%llu)-max(%llu)",
                     base->name.c_str(),
                     it.c_str(),
@@ -554,24 +551,20 @@ namespace __KV_PRIVATE__
     struct NumericConfigDataHandlerListMaxListPackSize : NumericConfigDataHandler
     {
         using NumericConfigDataHandler::NumericConfigDataHandler;
-        void init () const noexcept override
-        {
+        void init () const noexcept override {
             setListMaxListPackSizeConfig(static_cast<int>(base->data.numeric.defaultValue));
         }
-        ReturnNum set (const StringType &it) const noexcept override
-        {
+        ReturnNum set (const StringType &it) const noexcept override {
             long long data;
             if (!isValid(it, &data))
                 return ReturnNum::FAILURE;
 
             return setListMaxListPackSizeConfig(static_cast<int>(data));
         }
-        StringType get () const noexcept override
-        {
+        StringType get () const noexcept override {
             auto configPtr = getListMaxListPackSizePtr();
             StringType str;
-            switch (configPtr->type)
-            {
+            switch (configPtr->type) {
                 case ListMaxListPackSizeType::TYPE_NUM:
                     str = std::to_string(configPtr->number);
                     break;
@@ -584,31 +577,25 @@ namespace __KV_PRIVATE__
         }
 
     private:
-        inline ListMaxListPackSize *getListMaxListPackSizePtr () const noexcept
-        {
+        inline ListMaxListPackSize *getListMaxListPackSizePtr () const noexcept {
             return reinterpret_cast<ListMaxListPackSize *>(
                 reinterpret_cast<char *>(base->data.numeric.configValue.i)
                     - sizeof(ListMaxListPackSizeType));
         }
 
-        ReturnNum setListMaxListPackSizeConfig (int t) const
-        {
+        ReturnNum setListMaxListPackSizeConfig (int t) const {
             auto *configPtr = getListMaxListPackSizePtr();
             uint16_t max;
             ListMaxListPackSizeType type;
-            if (t < 0)
-            {
+            if (t < 0) {
                 type = ListMaxListPackSizeType::TYPE_SIZE;
-                if (t < -5)
-                {
+                if (t < -5) {
                     PRINT_ERROR("config listMaxListPackSize error : %d is not allowed [-1 ~ -5]",
                         t);
                     return ReturnNum::FAILURE;
                 }
                 max = (1 << (-t + 1)) * 1024;
-            }
-            else
-            {
+            } else {
                 type = ListMaxListPackSizeType::TYPE_NUM;
                 max = static_cast<uint16_t>(t);
             }
@@ -620,11 +607,9 @@ namespace __KV_PRIVATE__
             configPtr->number = max;
             return ReturnNum::SUCCESS;
         }
-        bool isValid (const StringType &it, long long int *data) const noexcept override
-        {
+        bool isValid (const StringType &it, long long int *data) const noexcept override {
             bool ret = NumericConfigDataHandler::isValid(it, data);
-            if (ret && *data == 0)
-            {
+            if (ret && *data == 0) {
                 PRINT_ERROR("check the value in %s : %s, 0 is not allow",
                     base->name.c_str(),
                     it.c_str());
@@ -638,19 +623,16 @@ namespace __KV_PRIVATE__
     struct BoolConfigDataHandler : ConfigDataHandler
     {
         using ConfigDataHandler::ConfigDataHandler;
-        void init () const noexcept override
-        {
+        void init () const noexcept override {
             *base->data.yesno.configValue = base->data.yesno.defaultValue;
         }
-        ReturnNum set (const StringType &it) const noexcept override
-        {
+        ReturnNum set (const StringType &it) const noexcept override {
             bool value;
             if (isEqualIgnoreCase(it, BOOL_YES))
                 value = true;
             else if (isEqualIgnoreCase(it, BOOL_NO))
                 value = false;
-            else
-            {
+            else {
                 PRINT_ERROR("bool param value must be yes or no, check %s", it.c_str());
                 return ReturnNum::FAILURE;
             }
@@ -658,16 +640,14 @@ namespace __KV_PRIVATE__
             *base->data.yesno.configValue = value;
             return ReturnNum::SUCCESS;
         }
-        StringType get () const noexcept override
-        {
+        StringType get () const noexcept override {
             if (*base->data.yesno.configValue)
                 return BOOL_YES;
             return BOOL_NO;
         }
 
     private:
-        static bool isEqualIgnoreCase (const StringType &s1, const StringType &s2)
-        {
+        static bool isEqualIgnoreCase (const StringType &s1, const StringType &s2) {
             if (s1.size() != s2.size())
                 return false;
 
@@ -682,23 +662,17 @@ namespace __KV_PRIVATE__
     struct StringConfigDataHandler : ConfigDataHandler
     {
         using ConfigDataHandler::ConfigDataHandler;
-        void init () const noexcept override
-        {
+        void init () const noexcept override {
             base->data.string.configValue->assign(base->data.string.defaultValue);
         }
-        ReturnNum set (const StringType &it) const noexcept override
-        {
-            if (it.empty())
-            {
-                if (base->data.string.convertEmptyToNull)
-                {
+        ReturnNum set (const StringType &it) const noexcept override {
+            if (it.empty()) {
+                if (base->data.string.convertEmptyToNull) {
                     if (*base->data.string.configValue == CONVERT_EMPTY_TO_NULL_VAL)
                         return ReturnNum::NO_CHANGES;
                     base->data.string.configValue->assign(CONVERT_EMPTY_TO_NULL_VAL);
                     return ReturnNum::SUCCESS;
-                }
-                else
-                {
+                } else {
                     base->data.string.configValue->clear();
                     // PRINT_ERROR("this param not be null , check %s", it.c_str());
                     // return ReturnNum::FAILURE;
@@ -711,12 +685,10 @@ namespace __KV_PRIVATE__
             base->data.string.configValue->assign(it);
             return ReturnNum::SUCCESS;
         }
-        StringType get () const noexcept override
-        {
+        StringType get () const noexcept override {
             return *base->data.string.configValue;
         }
-        ReturnNum set (const ArrayType <StringType> &it) const noexcept override
-        {
+        ReturnNum set (const ArrayType <StringType> &it) const noexcept override {
             return ConfigDataHandler::set(it);
         }
     };
@@ -724,10 +696,8 @@ namespace __KV_PRIVATE__
     struct StringConfigDataHandlerBind : StringConfigDataHandler
     {
         using StringConfigDataHandler::StringConfigDataHandler;
-        ReturnNum set (const ArrayType <StringType> &it) const noexcept override
-        {
-            if (it.size() > BIND_MAX)
-            {
+        ReturnNum set (const ArrayType <StringType> &it) const noexcept override {
+            if (it.size() > BIND_MAX) {
                 PRINT_ERROR("bind params out of the max length, max : %d, params len : %zu",
                     BIND_MAX,
                     it.size());
@@ -741,15 +711,12 @@ namespace __KV_PRIVATE__
             base->data.string.configValue[i] = CONVERT_EMPTY_TO_NULL_VAL;
             return ReturnNum::SUCCESS;
         }
-        void init () const noexcept override
-        {
+        void init () const noexcept override {
             base->data.string.configValue[0] = base->data.string.defaultValue;
         }
-        StringType get () const noexcept override
-        {
+        StringType get () const noexcept override {
             StringType params;
-            for (int i = 0; base->data.string.configValue[i] != CONVERT_EMPTY_TO_NULL_VAL; ++i)
-            {
+            for (int i = 0; base->data.string.configValue[i] != CONVERT_EMPTY_TO_NULL_VAL; ++i) {
                 params += base->data.string.configValue[i];
                 params += ' ';
             }
@@ -761,16 +728,12 @@ namespace __KV_PRIVATE__
     struct EnumConfigDataHandler : ConfigDataHandler
     {
         using ConfigDataHandler::ConfigDataHandler;
-        void init () const noexcept override
-        {
+        void init () const noexcept override {
             *base->data.enumd.configValue = base->data.enumd.defaultValue;
         }
-        ReturnNum set (const StringType &it) const noexcept override
-        {
-            for (int i = 0; base->data.enumd.enumSet[i] != ENUM_SET_NIL; ++i)
-            {
-                if (base->data.enumd.enumSet[i] == it)
-                {
+        ReturnNum set (const StringType &it) const noexcept override {
+            for (int i = 0; base->data.enumd.enumSet[i] != ENUM_SET_NIL; ++i) {
+                if (base->data.enumd.enumSet[i] == it) {
                     if (base->data.enumd.enumSet[i] == *base->data.enumd.configValue)
                         return ReturnNum::NO_CHANGES;
 
@@ -781,10 +744,8 @@ namespace __KV_PRIVATE__
 
             return ReturnNum::FAILURE;
         }
-        StringType get () const noexcept override
-        {
-            for (int i = 0; base->data.enumd.enumSet[i] != ENUM_SET_NIL; ++i)
-            {
+        StringType get () const noexcept override {
+            for (int i = 0; base->data.enumd.enumSet[i] != ENUM_SET_NIL; ++i) {
                 if (base->data.enumd.enumSet[i] == *base->data.enumd.configValue)
                     return base->data.enumd.enumSet[i].name;
             }
@@ -828,8 +789,7 @@ namespace __KV_PRIVATE__
             : ConfigDataBase(numericType, defaultValue, value, flags, name),
               handler(this, min, max) {}
 
-        const NumericConfigDataHandlerListMaxListPackSize &getHandler () const noexcept override
-        {
+        const NumericConfigDataHandlerListMaxListPackSize &getHandler () const noexcept override {
             return handler;
         }
 
@@ -888,11 +848,9 @@ namespace __KV_PRIVATE__
 class KvConfig
 {
 public:
-    static int init (const std::string &path)
-    {
+    static int init (const std::string &path) {
         static bool isInit = false;
-        if (!isInit)
-        {
+        if (!isInit) {
             isInit = true;
             loadAllConfig();
 
@@ -901,18 +859,15 @@ public:
 
         return 0;
     }
-    static inline KvConfigFields &getConfig ()
-    {
+    static inline KvConfigFields &getConfig () {
         return config;
     }
 private:
-    static int readConfigFile (const std::string &path)
-    {
+    static int readConfigFile (const std::string &path) {
         std::ifstream inBuffer(path, std::ios_base::in);
         char lineBuffer[LINE_BUFFER_SIZE];
 
-        if (!inBuffer.is_open())
-        {
+        if (!inBuffer.is_open()) {
             PRINT_ERROR("open config file error : %s", std::strerror(errno));
             return -errno;
         }
@@ -922,8 +877,7 @@ private:
 
         if (inBuffer.eof())
             PRINT_INFO("read config file success ...");
-        else if (inBuffer.fail())
-        {
+        else if (inBuffer.fail()) {
             PRINT_ERROR("read config file error : %s", std::strerror(errno));
             inBuffer.close();
             return -errno;
@@ -933,35 +887,28 @@ private:
     }
 
     template <int Size>
-    static bool parseConfigLine (char (&lineBuffer)[Size])
-    {
+    static bool parseConfigLine (char (&lineBuffer)[Size]) {
         std::string str = lineBuffer;
         str = Utils::StringHelper::stringTrim(str);
         if (str.empty() || str[0] == '#')
             return false;
 
         auto strArr = Utils::StringHelper::stringSplit(str, ' ');
-        if (strArr.size() < 2)
-        {
+        if (strArr.size() < 2) {
             PRINT_ERROR("config parameter missing, check %s", str.c_str());
             return false;
         }
         auto it = configParseMap.find(strArr[0]);
-        if (!it)
-        {
+        if (!it) {
             PRINT_ERROR("config is no definition, check %s", str.c_str());
             return false;
         }
         __KV_PRIVATE__::ReturnNum res;
-        if (it->second->flags & GET_ENUM_UINT64(__KV_PRIVATE__::ConfigFlag::MULTI_ARG_CONFIG))
-        {
+        if (it->second->flags & GET_ENUM_UINT64(__KV_PRIVATE__::ConfigFlag::MULTI_ARG_CONFIG)) {
             strArr.erase(strArr.begin());
             res = it->second->getHandler().set(strArr);
-        }
-        else
-        {
-            if (strArr.size() > 2)
-            {
+        } else {
+            if (strArr.size() > 2) {
                 PRINT_ERROR(
                     "config parameter error, this configuration does not require multiple parameters , check %s",
                     str.c_str());
@@ -975,8 +922,7 @@ private:
         return true;
     }
 
-    static void loadAllConfig ()
-    {
+    static void loadAllConfig () {
         CREATE_NUMERIC_CONFIG(port,
             __KV_PRIVATE__::ConfigFlag::MODIFIABLE_CONFIG,
             __KV_PRIVATE__::NumericType::NUMERIC_TYPE_UINT,
@@ -1058,6 +1004,14 @@ private:
             &config.requirePass,
             true);
 
+        CREATE_NUMERIC_CONFIG(hz,
+            __KV_PRIVATE__::ConfigFlag::MODIFIABLE_CONFIG,
+            __KV_PRIVATE__::NumericType::NUMERIC_TYPE_INT,
+            10,
+            &config.hz,
+            1,
+            500);
+
         CREATE_NUMERIC_CONFIG_CUSTOM(__KV_PRIVATE__::NumericConfigDataListMaxListPackSize,
             listMaxListPackSize,
             __KV_PRIVATE__::ConfigFlag::MODIFIABLE_CONFIG,
@@ -1090,13 +1044,51 @@ private:
             &config.hashMaxListPackValue,
             0,
             std::numeric_limits <uint16_t>::max());
+
+        CREATE_NUMERIC_CONFIG(setMaxIntSetEntries,
+            __KV_PRIVATE__::ConfigFlag::MODIFIABLE_CONFIG,
+            __KV_PRIVATE__::NumericType::NUMERIC_TYPE_ULONG,
+            512,
+            &config.setMaxIntSetEntries,
+            0,
+            std::numeric_limits <uint64_t>::max());
+
+        CREATE_NUMERIC_CONFIG(setMaxListPackEntries,
+            __KV_PRIVATE__::ConfigFlag::MODIFIABLE_CONFIG,
+            __KV_PRIVATE__::NumericType::NUMERIC_TYPE_ULONG,
+            128,
+            &config.setMaxListPackEntries,
+            0,
+            std::numeric_limits <uint64_t>::max());
+
+        CREATE_NUMERIC_CONFIG(setMaxListPackValue,
+            __KV_PRIVATE__::ConfigFlag::MODIFIABLE_CONFIG,
+            __KV_PRIVATE__::NumericType::NUMERIC_TYPE_ULONG,
+            64,
+            &config.setMaxListPackValue,
+            0,
+            std::numeric_limits <uint64_t>::max());
+
+        CREATE_NUMERIC_CONFIG(zsetMaxListPackEntries,
+            __KV_PRIVATE__::ConfigFlag::MODIFIABLE_CONFIG,
+            __KV_PRIVATE__::NumericType::NUMERIC_TYPE_ULONG,
+            128,
+            &config.zsetMaxListPackEntries,
+            0,
+            std::numeric_limits <uint64_t>::max());
+
+        CREATE_NUMERIC_CONFIG(zsetMaxListPackValue,
+            __KV_PRIVATE__::ConfigFlag::MODIFIABLE_CONFIG,
+            __KV_PRIVATE__::NumericType::NUMERIC_TYPE_ULONG,
+            64,
+            &config.zsetMaxListPackValue,
+            0,
+            std::numeric_limits <uint64_t>::max());
     }
 
     static KvConfigFields config;
-    static HashTable <StringType, __KV_PRIVATE__::ConfigDataBase *, true>
-        configParseMap;
+    static HashTable <StringType, __KV_PRIVATE__::ConfigDataBase *> configParseMap;
 };
 KvConfigFields KvConfig::config;
-HashTable <StringType, __KV_PRIVATE__::ConfigDataBase *, true>
-    KvConfig::configParseMap;
+HashTable <StringType, __KV_PRIVATE__::ConfigDataBase *> KvConfig::configParseMap;
 #endif //LINUX_SERVER_LIB_KV_STORE_CONFIG_KV_CONFIG_H_

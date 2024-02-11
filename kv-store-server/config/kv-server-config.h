@@ -10,8 +10,7 @@
 class KvServerConfig
 {
 public:
-    static bool initServerConfig ()
-    {
+    static bool initServerConfig () {
         if (!initServerDaemonize())
             return false;
 
@@ -25,8 +24,7 @@ public:
     }
 
 private:
-    static bool initServerLoggerStream ()
-    {
+    static bool initServerLoggerStream () {
         auto config = KvConfig::getConfig();
         auto logFile = config.logFile;
 
@@ -39,8 +37,7 @@ private:
 
         return true;
     }
-    static bool initServerDaemonize ()
-    {
+    static bool initServerDaemonize () {
         auto config = KvConfig::getConfig();
         bool daemonize = config.daemonize;
 
@@ -50,8 +47,7 @@ private:
         return true;
     }
 
-    static bool initServerPidFile ()
-    {
+    static bool initServerPidFile () {
         auto config = KvConfig::getConfig();
         auto &pidFile = config.pidFile;
 
@@ -61,16 +57,14 @@ private:
         return true;
     }
 
-    static bool daemonize ()
-    {
+    static bool daemonize () {
         // 父进程
         if (fork() != 0)
             exit(EXIT_SUCCESS);
         setsid();
 
         int fd = open("/dev/null", O_RDONLY);
-        if (fd == -1)
-        {
+        if (fd == -1) {
             PRINT_ERROR("open /dev/null error : %s", strerror(errno));
             return false;
         }
@@ -84,12 +78,10 @@ private:
         return true;
     }
 
-    static bool pidFile (const StringType &filePath)
-    {
+    static bool pidFile (const StringType &filePath) {
         std::ofstream file(filePath, std::ios_base::out | std::ios_base::trunc);
 
-        if (file.is_open())
-        {
+        if (file.is_open()) {
             file << getpid() << std::endl;
             file.close();
 

@@ -2,8 +2,8 @@
 // Created by 115282 on 2023/9/28.
 //
 
-#ifndef LINUX_SERVER_LIB_KV_STORE_CONFIG_KV_ENV_H_
-#define LINUX_SERVER_LIB_KV_STORE_CONFIG_KV_ENV_H_
+#ifndef KV_STORE_CLIENT_KV_ENV_H_
+#define KV_STORE_CLIENT_KV_ENV_H_
 
 #include <iomanip>
 #include <cstring>
@@ -16,39 +16,29 @@
 class KvEnv
 {
 public:
-    KvEnv (int argc, char **argv)
-    {
+    KvEnv (int argc, char **argv) {
         checkParams(argc, argv);
     }
-    inline uint16_t getPort () const
-    {
+    inline uint16_t getPort () const {
         return port;
     }
-    inline const std::string &getIp () const
-    {
+    inline const std::string &getIp () const {
         return ip;
     }
 
 private:
-    void checkParams (int argc, char **argv)
-    {
-        if (argc == 1)
-        {
+    void checkParams (int argc, char **argv) {
+        if (argc == 1) {
             return;
         }
-        else
-        {
-            for (int i = 0; i < argc; ++i)
-            {
+        else {
+            for (int i = 0; i < argc; ++i) {
                 char *paramsKey = argv[i];
                 char *paramsVal;
 
-                if (paramsKey[0] == '-')
-                {
-                    if (strcmp(paramsKey, "-p") == 0 || strcmp(paramsKey, "--port") == 0)
-                    {
-                        if (i + 1 == argc)
-                        {
+                if (paramsKey[0] == '-') {
+                    if (strcmp(paramsKey, "-p") == 0 || strcmp(paramsKey, "--port") == 0) {
+                        if (i + 1 == argc) {
                             std::cerr << "Unrecognized option or bad number of args for: '-p'"
                                       << std::endl;
                             exit(EXIT_FAILURE);
@@ -57,12 +47,10 @@ private:
                         paramsVal = paramsKey + 1;
                         portHandler(paramsVal);
                     }
-                    else if (strcmp(paramsKey, "-h") == 0)
-                    {
+                    else if (strcmp(paramsKey, "-h") == 0) {
                         if (i + 1 == argc || (paramsKey + 1)[0] == '-')
                             helpHandler();
-                        else
-                        {
+                        else {
                             i++;
                             paramsVal = paramsKey + 1;
                             hostHandler(paramsVal);
@@ -75,23 +63,19 @@ private:
         }
     }
 
-    void portHandler (const char *paramsVal) noexcept
-    {
+    void portHandler (const char *paramsVal) noexcept {
         unsigned p;
-        if (!Utils::StringHelper::stringIsUI(paramsVal, &p))
-        {
+        if (!Utils::StringHelper::stringIsUI(paramsVal, &p)) {
             std::cerr << "port must be a unsigned int" << std::endl;
             exit(EXIT_FAILURE);
         }
 
         port = p;
     }
-    void hostHandler (const char *paramsVal) noexcept
-    {
+    void hostHandler (const char *paramsVal) noexcept {
         ip = paramsVal;
     }
-    static void helpHandler () noexcept
-    {
+    static void helpHandler () noexcept {
         std::cout << "Usage: redis-cli [OPTIONS] [cmd [arg [arg ...]]]\n"
                   << "  -h <hostname>      Server hostname (default: " << DEFAULT_IP << ")\n"
                   << "  -p <port>          Server port (default: " << DEFAULT_PORT << ").\n"
@@ -103,4 +87,4 @@ private:
     uint16_t port = DEFAULT_PORT;
     std::string ip = DEFAULT_IP;
 };
-#endif //LINUX_SERVER_LIB_KV_STORE_CONFIG_KV_ENV_H_
+#endif //KV_STORE_CLIENT_KV_ENV_H_

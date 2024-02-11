@@ -17,19 +17,16 @@ public:
     using FunctionalType = std::pair <std::function <void (void *)>, intptr_t *>;
     using ContainerType = std::unordered_map <EventsKeyType, std::list <FunctionalType>>;
 
-    void emit (const EventsKeyType &key, void *arg)
-    {
+    void emit (const EventsKeyType &key, void *arg) {
         auto it = observer.find(key);
-        if (it != observer.end())
-        {
+        if (it != observer.end()) {
             for (auto &v : it->second)
                 v.first(arg);
         }
     }
 
     template <class T>
-    void on (const EventsKeyType &key, T &&fun)
-    {
+    void on (const EventsKeyType &key, T &&fun) {
         auto it = observer.find(key);
         if (it == observer.end())
             it = observer.emplace(key, std::list <FunctionalType>()).first;
@@ -39,8 +36,7 @@ public:
     }
 
     template <class T>
-    void once (const EventsKeyType &key, T &&fun)
-    {
+    void once (const EventsKeyType &key, T &&fun) {
         auto cb = [key, fun, this] (void *arg) {
             fun(arg);
 
@@ -50,24 +46,19 @@ public:
         on(key, cb);
     }
 
-    void off () noexcept
-    {
+    void off () noexcept {
         observer.clear();
     }
 
-    void off (const EventsKeyType &key) noexcept
-    {
+    void off (const EventsKeyType &key) noexcept {
         observer.erase(key);
     }
 
     template <class T>
-    void off (const EventsKeyType &key, T &&fun) noexcept
-    {
+    void off (const EventsKeyType &key, T &&fun) noexcept {
         auto list = observer.find(key);
-        if (list != observer.end())
-        {
-            for (auto it = list->second.begin(); it != list->second.end();)
-            {
+        if (list != observer.end()) {
+            for (auto it = list->second.begin(); it != list->second.end();) {
                 if (it->second == reinterpret_cast<intptr_t *>(&fun))
                     it = list->second.erase(it);
                 else

@@ -13,25 +13,20 @@
 class KvEnv
 {
 public:
-    KvEnv (int argc, char **argv)
-    {
+    KvEnv (int argc, char **argv) {
         checkParams(argc, argv);
     }
 
-    inline std::string getFilePath () const noexcept
-    {
+    inline std::string getFilePath () const noexcept {
         return filePath;
     }
 
 private:
-    void checkParams (int argc, char **argv)
-    {
-        if (argc == 1)
-        {
+    void checkParams (int argc, char **argv) {
+        if (argc == 1) {
             return;
         }
-        else if (argc == 2)
-        {
+        else if (argc == 2) {
             char *paramsKey = argv[1];
 
             if (paramsKey[0] == '-')
@@ -42,27 +37,24 @@ private:
         }
     }
 
-    static void paramsHandler (char *param) noexcept
-    {
+    static void paramsHandler (char *param) noexcept {
         if (strcmp(param, "-v") == 0 || strcmp(param, "--version") == 0)
             versionHandler();
         else if (strcmp(param, "-h") == 0 || strcmp(param, "--help") == 0)
             helpHandler();
     }
 
-    static void versionHandler () noexcept
-    {
+    static void versionHandler () noexcept {
         std::cout << PROJECT_NAME << " v=" << PROJECT_VER << std::endl;
         exit(EXIT_SUCCESS);
     }
 
-    static void helpHandler () noexcept
-    {
+    static void helpHandler () noexcept {
         std::cout << "Usage: \n       "
-                  << "./kv-store [/path/to/kv-store.conf]\n       "
-                  << "./kv-store -v or --version\n       "
-                  << "./kv-store -h or --help\n\n" << "Examples: \n       "
-                  << "./kv-store /etc/kv-store.conf" << std::endl;
+                  << "./kv-store-server [/path/to/kv-store.conf]\n       "
+                  << "./kv-store-server -v or --version\n       "
+                  << "./kv-store-server -h or --help\n\n" << "Examples: \n       "
+                  << "./kv-store-server /etc/kv-store.conf" << std::endl;
         exit(EXIT_SUCCESS);
     }
 

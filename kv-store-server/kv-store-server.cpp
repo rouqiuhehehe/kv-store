@@ -4,20 +4,15 @@
 
 #undef KV_STORE_TEST
 #include "kv-store.h"
-#include "util/random.h"
 
-int main (int argc, char **argv)
-{
+int main (int argc, char **argv) {
     setbuf(stdout, nullptr);
 
     KvEnv env(argc, argv);
-    if (KvConfig::init(env.getFilePath()) != 0)
-        exit(EXIT_FAILURE);
-    if (!KvServerConfig::initServerConfig())
+    if (KvConfig::init(env.getFilePath()) != 0 || !KvServerConfig::initServerConfig())
         exit(EXIT_FAILURE);
 
     Tcp tcpServer;
     tcpServer.mainLoop();
-
     return 0;
 }

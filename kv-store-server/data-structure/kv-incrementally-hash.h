@@ -1,3 +1,5 @@
+#pragma clang diagnostic push
+#pragma ide diagnostic ignored "bugprone-reserved-identifier"
 //
 // Created by 115282 on 2023/8/28.
 //
@@ -9,14 +11,16 @@
 #include "printf-color.h"
 #include "util/random.h"
 
-template <class _Key, class _Val, typename _Hash = std::hash <_Key>,
-    typename _Pred = std::equal_to <_Key>,
-    typename _Alloc = std::allocator <std::pair <const _Key, _Val>>>
+template <class _Key, class _Val, class ExtractKey, typename _Hash = std::hash <_Key>,
+          typename _Pred = std::equal_to <_Key>,
+          typename _Alloc = std::allocator <std::pair <const _Key, _Val>>>
 class IncrementallyHashTable
 {
-    using _HashTable = HashTable <_Key, _Val, false, _Hash, _Pred, _Alloc>;
+    using _HashTable = class _HashTable <_Key, _Val, ExtractKey, false, _Hash, _Pred, _Alloc>;
 
 public:
+    using HashNodeType = typename _HashTable::HashNodeType;
+
     enum class ReHashStatus
     {
         DEFAULT,
@@ -41,37 +45,30 @@ public:
     using ConstIterator = const _IncrementallyHashTableIterator;
     using iterator = Iterator;
 
-    IncrementallyHashTable ()
-    {
+    IncrementallyHashTable () {
+        initPrivate();
+    }
+    explicit IncrementallyHashTable (size_t size) {
         // 先进行一次扩容，HashTable实现默认是不进行第一次扩容的
-        h1.reHash(h1.needRehash(11).second);
+        h1.reHash(h1.needRehash(size < INIT_HASH_CAPACITY ? INIT_HASH_CAPACITY : size).second);
 
         initPrivate();
     }
-    explicit IncrementallyHashTable (size_t size)
-    {
-        // 先进行一次扩容，HashTable实现默认是不进行第一次扩容的
-        h1.reHash(h1.needRehash(size).second);
-
-        initPrivate();
-    }
-    ~IncrementallyHashTable () noexcept
-    {
-        clear();
+    ~IncrementallyHashTable () noexcept {
+        // 如果有h2 只需要清除h2即可
+        if (status != ReHashStatus::DEFAULT)
+            h1._begin.next = nullptr;
     };
 
-    IncrementallyHashTable (const IncrementallyHashTable &rhs)
-    {
+    IncrementallyHashTable (const IncrementallyHashTable &rhs) {
         this->operator=(rhs);
     }
 
-    IncrementallyHashTable (IncrementallyHashTable &&rhs) noexcept
-    {
+    IncrementallyHashTable (IncrementallyHashTable &&rhs) noexcept {
         this->operator=(std::move(rhs));
     }
 
-    IncrementallyHashTable &operator= (const IncrementallyHashTable &rhs)
-    {
+    IncrementallyHashTable &operator= (const IncrementallyHashTable &rhs) {
         if (this == &rhs)
             return *this;
 
@@ -80,30 +77,27 @@ public:
         status = rhs.status;
 
         typename _HashTable::NodeBasePtr node;
-        if (rhs.rehashMoveNextNode)
-        {
+        if (rhs.rehashMoveNextNode) {
             size_t idx = rhs.h1.getHashIndex(*rhs.rehashMoveNextNode);
             node = h1.findBeforeNode(
                 idx,
-                rhs.rehashMoveNextNode->node.first,
+                ExtractKey {}(rhs.rehashMoveNextNode->node),
                 rhs.rehashMoveNextNode->hashCode
             );
             if (node)
                 rehashMoveNextNode = static_cast<typename _HashTable::NodePtr>(node)->getNext();
         }
 
-        if (rhs.rehashMovePrevNode)
-        {
+        if (rhs.rehashMovePrevNode) {
             if (rhs.rehashMovePrevNode == &rhs.h1._begin)
                 rehashMovePrevNode = &h1._begin;
-            else
-            {
+            else {
                 auto nodePtr = static_cast<typename _HashTable::NodePtr>(rhs.rehashMovePrevNode);
                 size_t idx = rhs.h1
                                 .getHashIndex(*nodePtr);
                 node = h1.findBeforeNode(
                     idx,
-                    nodePtr->node.first,
+                    ExtractKey {}(nodePtr->node),
                     nodePtr->hashCode
                 );
                 if (node)
@@ -111,10 +105,10 @@ public:
             }
         }
 
+        return *this;
     }
 
-    IncrementallyHashTable &operator= (IncrementallyHashTable &&rhs) noexcept
-    {
+    IncrementallyHashTable &operator= (IncrementallyHashTable &&rhs) noexcept {
         if (this == &rhs)
             return *this;
         h1 = std::move(rhs.h1);
@@ -128,16 +122,14 @@ public:
         return *this;
     }
 
-    Iterator getRandomItem ()
-    {
+    Iterator getRandomItem () {
         if (empty()) return end();
-        auto idx = Utils::Random::getRandomNum(0, size() - 1);
+        auto idx = Utils::Random::getRandomNum(static_cast<size_t>(0), size() - 1);
         auto &hashTable = status == ReHashStatus::DEFAULT ? h1 : h2;
 
         size_t curIdx = 0;
         auto node = hashTable._begin.next;
-        while (++curIdx < idx)
-        {
+        while (++curIdx < idx) {
             node = node->next;
         }
 
@@ -145,18 +137,16 @@ public:
     }
 
     template <class ...Arg>
-    std::pair <Iterator, bool> emplace (Arg &&...arg)
-    {
+    std::pair <Iterator, bool> emplace (Arg &&...arg) {
         moveOneNode();
-        if (status == ReHashStatus::DEFAULT)
-        {
+        if (status == ReHashStatus::DEFAULT) {
+            // 如果没有容量，默认扩容一次
+            if (h1.bucketCount == 0) defaultExpand();
             auto res = h1.emplace(std::forward <Arg>(arg)...);
-            if (res.first != _HashTable::OperatorStatus::OPERATOR_SUCCESS)
-            {
+            if (res.first != _HashTable::OperatorStatus::OPERATOR_SUCCESS) {
                 if (res.first == _HashTable::OperatorStatus::FAILURE_KEY_REPEAT)
                     return { end(), false };
-                else if (res.first == _HashTable::OperatorStatus::FAILURE_NEED_EXPAND)
-                {
+                else if (res.first == _HashTable::OperatorStatus::FAILURE_NEED_EXPAND) {
                     beginMoveNode(ReHashStatus::RE_HASHING_EXPAND);
                     return {
                         h2.emplace(std::forward <Arg>(arg)...).second,
@@ -165,11 +155,9 @@ public:
                 }
             }
             return { res.second, true };
-        }
-        else if (status == ReHashStatus::RE_HASHING_EXPAND)
+        } else if (status == ReHashStatus::RE_HASHING_EXPAND)
             return { h2.emplace(std::forward <Arg>(arg)...).second, true };
-        else if (status == ReHashStatus::RE_HASHING_SCALE_DOWN)
-        {
+        else if (status == ReHashStatus::RE_HASHING_SCALE_DOWN) {
             auto res = h2.emplace(std::forward <Arg>(arg)...);
             if (res.first == _HashTable::OperatorStatus::FAILURE_KEY_REPEAT)
                 return { end(), false };
@@ -182,13 +170,11 @@ public:
         return { end(), false };
     }
 
-    Iterator find (const _Key &key) noexcept
-    {
+    Iterator find (const _Key &key) noexcept {
         moveOneNode();
         if (status == ReHashStatus::DEFAULT)
             return { h1.find(key) };
-        else
-        {
+        else {
             auto res = h2.find(key);
             if (res == h2.end())
                 return { h1.find(key) };
@@ -197,37 +183,30 @@ public:
         }
     }
 
-    inline void clear () noexcept
-    {
+    inline void clear () noexcept {
         if (status == ReHashStatus::DEFAULT)
             h1.clear();
-        else
-        {
+        else {
+            h1._begin.next = nullptr;
             h2.clear();
-            h1.clear();
         }
 
         initPrivate();
     }
 
-    std::size_t erase (const _Key &key)
-    {
+    std::size_t erase (const _Key &key) {
         moveOneNode();
-        if (status == ReHashStatus::DEFAULT)
-        {
+        if (status == ReHashStatus::DEFAULT) {
             auto res = h1.erase(key);
             if (res.first == _HashTable::OperatorStatus::FAILURE_NEED_SCALE_DOWN)
                 beginMoveNode(ReHashStatus::RE_HASHING_SCALE_DOWN);
 
             return res.second;
-        }
-        else
-        {
+        } else {
             size_t hashCode = h1.getHash(key);
             size_t idx = h1.getHashIndex(hashCode);
             auto p = h1.findBeforeNode(idx, key, hashCode);
-            if (p)
-            {
+            if (p) {
                 auto res = h2.erase(key);
                 if (res.first == _HashTable::OperatorStatus::FAILURE_KEY_NOT_DEFINED)
                     h1.erasePrevNode(idx, p, static_cast<typename _HashTable::NodePtr>(p->next));
@@ -238,19 +217,15 @@ public:
         }
     }
 
-    Iterator erase (Iterator it) noexcept
-    {
+    Iterator erase (Iterator it) noexcept {
         moveOneNode();
-        if (status == ReHashStatus::DEFAULT)
-        {
+        if (status == ReHashStatus::DEFAULT) {
             auto res = h1.erase(it);
             if (res.first == _HashTable::OperatorStatus::FAILURE_NEED_SCALE_DOWN)
                 beginMoveNode(ReHashStatus::RE_HASHING_SCALE_DOWN);
 
             return { res.second };
-        }
-        else
-        {
+        } else {
             auto res = h2.erase(it);
             if (res.first == _HashTable::OperatorStatus::FAILURE_KEY_NOT_DEFINED)
                 return end();
@@ -259,32 +234,26 @@ public:
         }
     }
 
-    inline void moveOneNode ()
-    {
+    inline void moveOneNode () {
         if (status == ReHashStatus::DEFAULT)
             return;
 
         size_t idx = h1.getHashIndex(*rehashMoveNextNode);
         size_t nextIdx;
         decltype(rehashMoveNextNode) oldNext;
-        do
-        {
+        do {
             auto newIdx = h2.getHashIndex(*rehashMoveNextNode);
             oldNext = rehashMoveNextNode->getNext();
 
-            if (h2.buckets[newIdx])
-            {
+            if (h2.buckets[newIdx]) {
                 if (static_cast<decltype(rehashMoveNextNode)>(rehashMovePrevNode->next)
                     == rehashMoveNextNode)
                     rehashMovePrevNode->next = rehashMoveNextNode->next;
                 rehashMoveNextNode->next = h2.buckets[newIdx]->next;
                 h2.buckets[newIdx]->next = rehashMoveNextNode;
-            }
-            else
-            {
+            } else {
                 if (static_cast<decltype(rehashMoveNextNode)>(rehashMovePrevNode->next)
-                    != rehashMoveNextNode)
-                {
+                    != rehashMoveNextNode) {
                     rehashMoveNextNode->next = rehashMovePrevNode->next;
                     rehashMovePrevNode->next = rehashMoveNextNode;
                 }
@@ -307,39 +276,32 @@ public:
             endMoveNode();
     }
 
-    inline size_t size () const noexcept
-    {
+    inline size_t size () const noexcept {
         return h1.size() + h2.size();
     }
 
-    inline size_t empty () const noexcept
-    {
+    inline size_t empty () const noexcept {
         return h1.empty();
     }
 
-    inline Iterator begin () noexcept
-    {
+    inline Iterator begin () noexcept {
         return Iterator(status == ReHashStatus::DEFAULT ? h1.begin() : h2.begin());
     }
 
-    inline Iterator begin () const noexcept
-    {
+    inline Iterator begin () const noexcept {
         return ConstIterator(status == ReHashStatus::DEFAULT ? h1.begin() : h2.begin());
     }
 
-    inline Iterator end () noexcept
-    {
+    inline Iterator end () noexcept {
         return Iterator(static_cast<typename _HashTable::NodePtr>(nullptr));
     }
 
-    inline Iterator end () const noexcept
-    {
+    inline Iterator end () const noexcept {
         return ConstIterator(static_cast<typename _HashTable::NodePtr>(nullptr));
     }
 
 private:
-    inline void beginMoveNode (ReHashStatus moveStatus)
-    {
+    inline void beginMoveNode (ReHashStatus moveStatus) {
         status = moveStatus;
 
         rehashMovePrevNode = &h1._begin;
@@ -350,25 +312,27 @@ private:
         moveBeginNode();
     }
 
-    inline void moveBeginNode ()
-    {
+    inline void moveBeginNode () {
         h2._begin.next = h1._begin.next;
 
         moveOneNode();
     }
 
-    inline void endMoveNode ()
-    {
+    inline void endMoveNode () {
         status = ReHashStatus::DEFAULT;
         h1.clear();
         h1 = std::move(h2);
     }
 
-    inline void initPrivate () noexcept
-    {
+    inline void initPrivate () noexcept {
         rehashMoveNextNode = nullptr;
         rehashMovePrevNode = nullptr;
         status = ReHashStatus::DEFAULT;
+    }
+
+    inline void defaultExpand () {
+        // 先进行一次扩容，HashTable实现默认是不进行第一次扩容的
+        h1.reHash(h1.needRehash(INIT_HASH_CAPACITY).second);
     }
 
 private:
@@ -378,5 +342,9 @@ private:
     typename _HashTable::NodeBasePtr rehashMovePrevNode;
     typename _HashTable::NodePtr rehashMoveNextNode;
     ReHashStatus status;
+
+    static constexpr int INIT_HASH_CAPACITY = 11;
 };
 #endif //LINUX_SERVER_LIB_KV_STORE_KV_INCREMENTALLY_HASH_H_
+
+#pragma clang diagnostic pop

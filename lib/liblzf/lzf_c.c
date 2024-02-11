@@ -102,8 +102,7 @@ lzf_compress (
 #if LZF_STATE_ARG
     , LZF_STATE htab
 #endif
-)
-{
+) {
 #if !LZF_STATE_ARG
     LZF_STATE htab;
 #endif
@@ -139,8 +138,7 @@ lzf_compress (
     op++; /* start run */
 
     hval = FRST (ip);
-    while (ip < in_end - 2)
-    {
+    while (ip < in_end - 2) {
         LZF_HSLOT *hslot;
 
         hval = NEXT (hval, ip);
@@ -160,8 +158,7 @@ lzf_compress (
 #else
             && *(u16 *)ref == *(u16 *)ip
 #endif
-            )
-        {
+            ) {
             /* match found at *ref++ */
             unsigned int len = 2;
             unsigned int maxlen = in_end - ip - len;
@@ -174,10 +171,8 @@ lzf_compress (
             op[-lit - 1] = lit - 1; /* stop run */
             op -= !lit; /* undo run if length is zero */
 
-            for (;;)
-            {
-                if (expect_true (maxlen > 16))
-                {
+            for (;;) {
+                if (expect_true (maxlen > 16)) {
                     len++;
                     if (ref[len] != ip[len]) break;
                     len++;
@@ -225,12 +220,10 @@ lzf_compress (
             len -= 2; /* len is now #octets - 1 */
             ip++;
 
-            if (len < 7)
-            {
+            if (len < 7) {
                 *op++ = (off >> 8) + (len << 5);
             }
-            else
-            {
+            else {
                 *op++ = (off >> 8) + (7 << 5);
                 *op++ = len - 7;
             }
@@ -273,8 +266,7 @@ lzf_compress (
             while (len--);
 #endif
         }
-        else
-        {
+        else {
             /* one more literal byte we must copy */
             if (expect_false (op >= out_end))
                 return 0;
@@ -282,8 +274,7 @@ lzf_compress (
             lit++;
             *op++ = *ip++;
 
-            if (expect_false (lit == MAX_LIT))
-            {
+            if (expect_false (lit == MAX_LIT)) {
                 op[-lit - 1] = lit - 1; /* stop run */
                 lit = 0;
                 op++; /* start run */
@@ -294,13 +285,11 @@ lzf_compress (
     if (op + 3 > out_end) /* at most 3 bytes can be missing here */
         return 0;
 
-    while (ip < in_end)
-    {
+    while (ip < in_end) {
         lit++;
         *op++ = *ip++;
 
-        if (expect_false (lit == MAX_LIT))
-        {
+        if (expect_false (lit == MAX_LIT)) {
             op[-lit - 1] = lit - 1; /* stop run */
             lit = 0;
             op++; /* start run */

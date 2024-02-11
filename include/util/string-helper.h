@@ -24,15 +24,13 @@ namespace Utils
                 const std::string &str,
                 T (*stoInteger) (const std::string &, size_t *, int),
                 T *value = nullptr
-            )
-            {
+            ) {
                 if (str.empty())
                     return false;
                 if (str.size() > (std::numeric_limits <T>::digits10 + 1))
                     return false;
                 size_t endPtr;
-                try
-                {
+                try {
                     auto res = stoInteger(str, &endPtr, 10);
                     if (value)
                         *value = res;
@@ -43,25 +41,21 @@ namespace Utils
 
                     return (endPtr == str.size()) && res != minmax;
                 }
-                catch (const std::invalid_argument &e)
-                {
+                catch (const std::invalid_argument &e) {
                     // PRINT_ERROR("%s", e.what());
                     return false;
                 }
-                catch (const std::out_of_range &e)
-                {
+                catch (const std::out_of_range &e) {
                     // PRINT_ERROR("%s", e.what());
                     return false;
                 }
-                catch (...)
-                {
+                catch (...) {
                     return false;
                 }
             }
         }
 
-        inline std::string stringTrim (const std::string &str)
-        {
+        inline std::string stringTrim (const std::string &str) {
             if (str.empty())
                 return "";
 
@@ -71,13 +65,11 @@ namespace Utils
                 return "";
             return str.substr(start, end - start + 1);
         }
-        inline void stringTolower (std::string &str)
-        {
+        inline void stringTolower (std::string &str) {
             std::transform(str.begin(), str.end(), str.begin(), ::tolower);
         }
         inline void stringToupper
-            (std::string &str)
-        {
+            (std::string &str) {
             std::transform(str.begin(), str.end(), str.begin(), ::toupper);
         }
         /*
@@ -90,8 +82,7 @@ namespace Utils
             const std::string &str,
             const char split,
             bool isContinuously = true
-        )
-        {
+        ) {
             if (str.empty())
                 return {};
 
@@ -100,8 +91,7 @@ namespace Utils
             size_t index = 0;
             if (count == std::string::npos)
                 count = str.size();
-            while ((index + count) <= str.size())
-            {
+            while ((index + count) <= str.size()) {
                 res.emplace_back(str.substr(index, count));
 
                 index += count + 1;
@@ -115,29 +105,23 @@ namespace Utils
             return res;
         }
 
-        inline bool stringIsL (const std::string &str, long *value = nullptr)
-        {
+        inline bool stringIsL (const std::string &str, long *value = nullptr) {
             return __PRIVATE__::stringIsInteger(str, &std::stol, value);
         }
-        inline bool stringIsUL (const std::string &str, unsigned long *value = nullptr)
-        {
+        inline bool stringIsUL (const std::string &str, unsigned long *value = nullptr) {
             return __PRIVATE__::stringIsInteger(str, &std::stoul, value);
         }
-        inline bool stringIsLL (const std::string &str, long long *value = nullptr)
-        {
+        inline bool stringIsLL (const std::string &str, long long *value = nullptr) {
             return __PRIVATE__::stringIsInteger(str, &std::stoll, value);
         }
-        inline bool stringIsULL (const std::string &str, unsigned long long *value = nullptr)
-        {
+        inline bool stringIsULL (const std::string &str, unsigned long long *value = nullptr) {
             return __PRIVATE__::stringIsInteger(str, &std::stoull, value);
         }
 
-        inline bool stringIsI (const std::string &str, int *value = nullptr)
-        {
+        inline bool stringIsI (const std::string &str, int *value = nullptr) {
             return __PRIVATE__::stringIsInteger(str, &std::stoi, value);
         }
-        inline bool stringIsUI (const std::string &str, unsigned *value = nullptr)
-        {
+        inline bool stringIsUI (const std::string &str, unsigned *value = nullptr) {
             unsigned long v;
             bool res = stringIsUL(str, &v);
             if (res && value)
@@ -149,11 +133,12 @@ namespace Utils
         // {
         //     return __PRIVATE__::stringIsInteger(str, &std::strtoull, value);
         // }
-
-        inline bool stringIsDouble (const std::string &str, double *value = nullptr)
-        {
+        inline bool stringIsDouble (const std::string &str, double *value = nullptr, bool checkInf = true) {
             if (str.empty())
                 return false;
+            if (str.size() > std::numeric_limits <double>::digits10 + 1)
+                return false;
+
             errno = 0;
             char *endPtr;
             auto res = std::strtod(str.c_str(), &endPtr);
@@ -164,18 +149,29 @@ namespace Utils
                             ? -std::numeric_limits <double>::infinity()
                             : std::numeric_limits <double>::infinity();
             bool success =
-                (endPtr == (str.rbegin().operator->() + 1)) && errno != ERANGE && res != minmax;
+                (endPtr == (str.rbegin().operator->() + 1)) && errno != ERANGE && !(checkInf && res == minmax);
 
             errno = 0;
             return success;
         }
 
         template <class T>
-        inline std::string toString (T val)
-        {
+        inline std::string toString (T val) {
             static std::ostringstream stream;
             stream.str("");
             stream << val;
+            return stream.str();
+        }
+
+        template <class T, class Size>
+        inline std::string toString (T val, Size pre) {
+            static std::ostringstream stream;
+            stream.str("");
+
+            auto oldPre = stream.precision();
+            stream.precision(pre);
+            stream << val;
+            stream.precision(oldPre);
 
             return stream.str();
         }

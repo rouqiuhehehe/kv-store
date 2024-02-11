@@ -6,6 +6,7 @@
 #define LINUX_SERVER_LIB_INCLUDE_PRINTF_COLOR_H_
 
 #include <cstdarg>
+#include <cstring>
 #define NONE                 "\e[0m"
 #define BLACK                "\e[0;30m"
 #define L_BLACK              "\e[1;30m"
@@ -76,8 +77,7 @@ public:
         WARNING,
         ERROR
     };
-    ~Logger () noexcept
-    {
+    ~Logger () noexcept {
         fclose(in);
         fclose(out);
         fclose(err);
@@ -87,16 +87,13 @@ public:
         const char *outPath,
         const char *errPath,
         Level level
-    )
-    {
+    ) {
         logLevel = level;
         return setStandardStreams(inPath, outPath, errPath);
     }
 
-    static void printInfo (Level level, const char *str, ...)
-    {
-        if (level >= logLevel)
-        {
+    static void printInfo (Level level, const char *str, ...) {
+        if (level >= logLevel) {
             va_list list;
             va_start(list, str);
             fprintf(out, "[%s] ", Utils::getDateNow("%Y-%m-%d %H:%M:%S").c_str());
@@ -105,8 +102,7 @@ public:
         }
     }
 
-    static void printErr (const char *str, ...)
-    {
+    static void printErr (const char *str, ...) {
         va_list list;
         va_start(list, str);
         fprintf(err, "[%s] ", Utils::getDateNow("%Y-%m-%d %H:%M:%S").c_str());
@@ -115,25 +111,21 @@ public:
     }
 
 private:
-    static bool setStandardStreams (const char *inPath, const char *outPath, const char *errPath)
-    {
+    static bool setStandardStreams (const char *inPath, const char *outPath, const char *errPath) {
         out = fopen(outPath, "a");
-        if (out == nullptr)
-        {
+        if (out == nullptr) {
             PRINT_ERROR("fopen %s error : %s", outPath, strerror(errno));
             return false;
         }
 
         in = fopen(inPath, "r");
-        if (in == nullptr)
-        {
+        if (in == nullptr) {
             PRINT_ERROR("fopen %s error : %s", inPath, strerror(errno));
             return false;
         }
 
         err = fopen(errPath, "a");
-        if (err == nullptr)
-        {
+        if (err == nullptr) {
             PRINT_ERROR("fopen %s error : %s", errPath, strerror(errno));
             return false;
         }
