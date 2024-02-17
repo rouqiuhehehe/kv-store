@@ -286,7 +286,7 @@ namespace Utils
             ) {
                 static_assert(
                     std::is_same <typename Utils::TypeHelper::lambdaTraits <Operator>::returnType,
-                                  void>::value, "return type must be void, please assign value in lamdba"
+                                  void>::value, "return type must be void, please assign value in lambda"
                 );
                 op(it, v);
             }
